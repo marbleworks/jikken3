@@ -265,6 +265,30 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   return res;
 }
 
+bool recoverLine(const Sense& s, int basePwm, int travelDir) {
+  int dirSign = (travelDir >= 0) ? 1 : -1;
+  int baseSigned = basePwm * dirSign;
+
+  int steerOffset;
+  if (lastBlackDir > 0) {
+    steerOffset = REC_STEER;
+  } else if (lastBlackDir < 0) {
+    steerOffset = -REC_STEER;
+  } else {
+    bool rightBias = (millis() / 300) % 2;
+    steerOffset = rightBias ? REC_STEER : -REC_STEER;
+  }
+
+  int left = baseSigned + steerOffset * dirSign;
+  int right = baseSigned - steerOffset * dirSign;
+
+  int minVal = (dirSign > 0) ? MIN_PWM : -MAX_PWM;
+  int maxVal = (dirSign > 0) ? MAX_PWM : -MIN_PWM;
+  setWheels(constrain(left, minVal, maxVal), constrain(right, minVal, maxVal));
+
+  return (s.isBlackL || s.isBlackR || s.bothBlack);
+}
+
 void handleForwardEndpoint(const char* context) {
   setWheels(0, 0);
   delay(150);
@@ -344,23 +368,8 @@ void loop() {
 
     // 前進のリカバリ：最後に黒を見た側へ強めに切りながら再捕捉
     case RECOVER_FWD: {
-      int l = BASE_FWD, r = BASE_FWD;
-      if (lastBlackDir > 0) {          // 右で黒 → 右へ寄る
-        l = BASE_FWD + REC_STEER;
-        r = BASE_FWD - REC_STEER;
-      } else if (lastBlackDir < 0) {   // 左で黒 → 左へ寄る
-        l = BASE_FWD - REC_STEER;
-        r = BASE_FWD + REC_STEER;
-      } else {
-        // 不明なら左右に小刻みに振る（300ms周期）
-        bool rightBias = (millis() / 300) % 2;
-        l = BASE_FWD + (rightBias ? +REC_STEER : -REC_STEER);
-        r = BASE_FWD - (rightBias ? +REC_STEER : -REC_STEER);
-      }
-      setWheels(constrain(l, MIN_PWM, MAX_PWM), constrain(r, MIN_PWM, MAX_PWM));
-
-      // 再捕捉したら復帰
-      if (s.isBlackL || s.isBlackR || s.bothBlack) {
+      bool recovered = recoverLine(s, BASE_FWD, +1);
+      if (recovered) {
         whiteSinceFollow = 0;
         state = FOLLOW_FWD;
         Serial.println("Recovered (forward) -> FOLLOW_FWD");
@@ -401,22 +410,8 @@ void loop() {
 
     // 後退のリカバリ：最後に黒を見た側の“逆”へ切る（進行方向が逆）
     case RECOVER_BACK: {
-      int l = -BASE_BACK, r = -BASE_BACK;
-      if (lastBlackDir > 0) {          // 右で黒 → 後退では左へ切る
-        l = -BASE_BACK - REC_STEER;
-        r = -BASE_BACK + REC_STEER;
-      } else if (lastBlackDir < 0) {   // 左で黒 → 後退では右へ切る
-        l = -BASE_BACK + REC_STEER;
-        r = -BASE_BACK - REC_STEER;
-      } else {
-        bool rightBias = (millis() / 300) % 2;
-        l = -BASE_BACK + (rightBias ? -REC_STEER : +REC_STEER);
-        r = -BASE_BACK - (rightBias ? -REC_STEER : +REC_STEER);
-      }
-      setWheels(constrain(l, -MAX_PWM, -MIN_PWM),
-                constrain(r, -MAX_PWM, -MIN_PWM));
-
-      if (s.isBlackL || s.isBlackR || s.bothBlack) {
+      bool recovered = recoverLine(s, BASE_BACK, -1);
+      if (recovered) {
         whiteSinceFollow = 0;
         state = FOLLOW_BACK;
         Serial.println("Recovered (back) -> FOLLOW_BACK");
