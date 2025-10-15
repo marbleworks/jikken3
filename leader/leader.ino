@@ -23,6 +23,10 @@ struct Sense {
   bool bothBlack;
   bool bothWhite;
 }; // ← セミコロン必須
+struct FollowResult {
+  bool lineLost;
+  bool endpoint;
+};
 // =================================================================
 
 // 状態機械
@@ -228,11 +232,6 @@ void awaitSerialRunModeOverride(unsigned long waitMs) {
     Serial.println("Keeping previous selection.");
   }
 }
-
-struct FollowResult {
-  bool lineLost;
-  bool endpoint;
-};
 
 FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   FollowResult res { false, false };
