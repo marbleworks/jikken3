@@ -26,6 +26,20 @@ struct Sense {
 // =================================================================
 
 // 状態機械
+enum RunMode {
+  RUNMODE_RECIP,
+  RUNMODE_LOOP
+};
+
+inline constexpr RunMode COMPILE_TIME_RUNMODE = RUNMODE_RECIP; // 直線コース向け既定値
+
+// DIP スイッチでモードを切り替える場合はピン番号を指定（未使用なら -1 のまま）
+inline constexpr int RUNMODE_DIP_PIN = -1;
+inline constexpr bool RUNMODE_DIP_USE_PULLUP = true;
+inline constexpr int RUNMODE_DIP_ACTIVE_LEVEL = LOW; // DIP ON（GNDに落とす）を LOW と想定
+inline constexpr RunMode RUNMODE_DIP_ACTIVE_MODE = RUNMODE_LOOP;
+inline constexpr RunMode RUNMODE_DIP_INACTIVE_MODE = RUNMODE_RECIP;
+
 enum State {
   SEEK_LINE_FWD,     // 端点スタート（白）→黒ラインを探しながら前進
   FOLLOW_FWD,        // 前進でライン追従
@@ -36,6 +50,9 @@ enum State {
   DONE               // 完了（停止）
 };
 State state = SEEK_LINE_FWD;
+RunMode runMode = COMPILE_TIME_RUNMODE;
+
+unsigned long lapCount = 0; // RUNMODE_LOOP で端点を通過した回数
 
 // 端点検出・見失い管理
 unsigned long bothWhiteSince = 0; // 両白が続いている開始時刻（端点判定用）
@@ -127,13 +144,151 @@ bool endpointSeen(bool bothWhiteNow) {
   }
 }
 
+const char* runModeLabel(RunMode mode) {
+  switch (mode) {
+    case RUNMODE_RECIP: return "Reciprocal";
+    case RUNMODE_LOOP:  return "Loop";
+    default:            return "Unknown";
+  }
+}
+
+void applyDipRunMode() {
+  if (RUNMODE_DIP_PIN < 0) return;
+
+  if (RUNMODE_DIP_USE_PULLUP) pinMode(RUNMODE_DIP_PIN, INPUT_PULLUP);
+  else                        pinMode(RUNMODE_DIP_PIN, INPUT);
+
+  int level = digitalRead(RUNMODE_DIP_PIN);
+  runMode = (level == RUNMODE_DIP_ACTIVE_LEVEL) ? RUNMODE_DIP_ACTIVE_MODE : RUNMODE_DIP_INACTIVE_MODE;
+
+  Serial.print("DIP run mode selection (pin ");
+  Serial.print(RUNMODE_DIP_PIN);
+  Serial.print("): ");
+  Serial.println(runModeLabel(runMode));
+}
+
+bool parseRunModeCommand(const String& cmd, RunMode& out) {
+  String normalized = cmd;
+  normalized.trim();
+  normalized.toLowerCase();
+  if (normalized == "loop") {
+    out = RUNMODE_LOOP;
+    return true;
+  }
+  if (normalized == "recip" || normalized == "reciprocal") {
+    out = RUNMODE_RECIP;
+    return true;
+  }
+  return false;
+}
+
+void awaitSerialRunModeOverride(unsigned long waitMs) {
+  if (waitMs == 0) return;
+
+  Serial.print("Send 'recip' or 'loop' within ");
+  Serial.print(waitMs);
+  Serial.println(" ms to override run mode...");
+
+  String buffer;
+  unsigned long deadline = millis() + waitMs;
+  while (millis() < deadline) {
+    if (Serial.available()) {
+      char c = (char)Serial.read();
+      if (c == '\n' || c == '\r') {
+        if (buffer.length() > 0) break;
+      } else {
+        buffer += c;
+      }
+    }
+  }
+
+  if (buffer.length() == 0) {
+    Serial.println("Using existing run mode selection.");
+    return;
+  }
+
+  RunMode parsed;
+  if (parseRunModeCommand(buffer, parsed)) {
+    runMode = parsed;
+    Serial.print("Run mode override via Serial: ");
+    Serial.println(runModeLabel(runMode));
+  } else {
+    Serial.print("Unknown run mode command: ");
+    Serial.println(buffer);
+    Serial.println("Keeping previous selection.");
+  }
+}
+
+struct FollowResult {
+  bool lineLost;
+  bool endpoint;
+};
+
+FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
+  FollowResult res { false, false };
+
+  if (s.bothWhite) {
+    if (whiteSinceFollow == 0) whiteSinceFollow = millis();
+    if (millis() - whiteSinceFollow > LOST_MS) {
+      res.lineLost = true;
+      return res;
+    }
+  } else {
+    whiteSinceFollow = 0;
+  }
+
+  float e = computeError(s.rawL, s.rawR);
+  float kp = (travelDir > 0) ? KP_FWD : KP_BACK;
+  int base = (travelDir > 0) ? BASE_FWD : BASE_BACK;
+  int corr = (int)(kp * e * 255.0f);
+
+  int left, right;
+  if (travelDir > 0) {
+    left  = constrain(base + corr, MIN_PWM, MAX_PWM);
+    right = constrain(base - corr, MIN_PWM, MAX_PWM);
+  } else {
+    left  = constrain(-base - corr, -MAX_PWM, -MIN_PWM);
+    right = constrain(-base + corr, -MAX_PWM, -MIN_PWM);
+  }
+  setWheels(left, right);
+
+  res.endpoint = endpointSeen(s.bothWhite);
+  return res;
+}
+
+void handleForwardEndpoint(const char* context) {
+  setWheels(0, 0);
+  delay(150);
+  whiteSinceFollow = 0;
+
+  if (runMode == RUNMODE_RECIP) {
+    state = SEEK_LINE_BACK;
+    Serial.print("Endpoint ");
+    Serial.print(context);
+    Serial.println(" -> SEEK_LINE_BACK");
+  } else {
+    ++lapCount;
+    state = SEEK_LINE_FWD;
+    Serial.print("Endpoint ");
+    Serial.print(context);
+    Serial.print(" -> continuing loop (lap ");
+    Serial.print(lapCount);
+    Serial.println(")");
+  }
+}
+
 // ------------------ setup / loop ------------------
 void setup() {
   Serial.begin(115200);
+  runMode = COMPILE_TIME_RUNMODE;
+  applyDipRunMode();
+  awaitSerialRunModeOverride(3000);
   pinMode(A_IN1, OUTPUT); pinMode(A_IN2, OUTPUT);
   pinMode(B_IN1, OUTPUT); pinMode(B_IN2, OUTPUT);
   setWheels(0, 0);
-  Serial.println("Power-on: SEEK_LINE_FWD");
+  Serial.print("Power-on (run mode: ");
+  Serial.print(runModeLabel(runMode));
+  Serial.println(") -> SEEK_LINE_FWD");
 }
 
 void loop() {
@@ -153,29 +308,13 @@ void loop() {
 
     // 前進でライントレース（P制御）
     case FOLLOW_FWD: {
-      // 両白が続けば見失い扱い → リカバリへ
-      if (s.bothWhite) {
-        if (whiteSinceFollow == 0) whiteSinceFollow = millis();
-        if (millis() - whiteSinceFollow > LOST_MS) {
-          state = RECOVER_FWD;
-          break;
-        }
-      } else {
-        whiteSinceFollow = 0;
+      FollowResult r = runLineTraceCommon(s, +1);
+      if (r.lineLost) {
+        state = RECOVER_FWD;
+        break;
       }
-
-      float e = computeError(s.rawL, s.rawR);
-      int corr = (int)(KP_FWD * e * 255.0f);
-      int left  = constrain(BASE_FWD + corr, MIN_PWM, MAX_PWM);
-      int right = constrain(BASE_FWD - corr, MIN_PWM, MAX_PWM);
-      setWheels(left, right);
-
-      // 端点判定（両白が長時間）
-      if (endpointSeen(s.bothWhite)) {
-        setWheels(0, 0);
-        delay(150);
-        state = SEEK_LINE_BACK;
-        Serial.println("Endpoint reached (forward) -> SEEK_LINE_BACK");
+      if (r.endpoint) {
+        handleForwardEndpoint("reached (forward)");
       }
       break;
     }
@@ -204,12 +343,9 @@ void loop() {
         Serial.println("Recovered (forward) -> FOLLOW_FWD");
       }
 
-      // リカバリ中でも端点なら折返しへ
+      // リカバリ中でも端点ならモードに応じて処理
       if (endpointSeen(s.bothWhite)) {
-        setWheels(0, 0);
-        delay(150);
-        state = SEEK_LINE_BACK;
-        Serial.println("Endpoint (recover fwd) -> SEEK_LINE_BACK");
+        handleForwardEndpoint("(recover fwd)");
       }
       break;
     }
@@ -227,23 +363,12 @@ void loop() {
 
     // 後退でライントレース（P制御：進行方向が逆なので注意）
     case FOLLOW_BACK: {
-      if (s.bothWhite) {
-        if (whiteSinceFollow == 0) whiteSinceFollow = millis();
-        if (millis() - whiteSinceFollow > LOST_MS) {
-          state = RECOVER_BACK;
-          break;
-        }
-      } else {
-        whiteSinceFollow = 0;
+      FollowResult r = runLineTraceCommon(s, -1);
+      if (r.lineLost) {
+        state = RECOVER_BACK;
+        break;
       }
-
-      float e = computeError(s.rawL, s.rawR);
-      int corr = (int)(KP_BACK * e * 255.0f);
-      int left  = constrain(-BASE_BACK - corr, -MAX_PWM, -MIN_PWM);  // [-255,0]
-      int right = constrain(-BASE_BACK + corr, -MAX_PWM, -MIN_PWM);  // [-255,0]
-      setWheels(left, right);
-
-      if (endpointSeen(s.bothWhite)) {
+      if (r.endpoint && runMode == RUNMODE_RECIP) {
         setWheels(0, 0);
         Serial.println("Back to start. DONE.");
         state = DONE;
@@ -274,7 +399,7 @@ void loop() {
         Serial.println("Recovered (back) -> FOLLOW_BACK");
       }
 
-      if (endpointSeen(s.bothWhite)) {
+      if (endpointSeen(s.bothWhite) && runMode == RUNMODE_RECIP) {
         setWheels(0, 0);
         Serial.println("Back to start. DONE.");
         state = DONE;
