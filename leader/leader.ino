@@ -85,6 +85,7 @@ void setWheelB(int speedSigned) {
 }
 
 // 左右同時設定（LEFT_IS_Aに合わせて割当）
+// left>right → 右旋回（ω<0）、right>left → 左旋回（ω>0）
 void setWheels(int leftSpeed, int rightSpeed) {
   if (LEFT_IS_A) { setWheelA(leftSpeed); setWheelB(rightSpeed); }
   else           { setWheelA(rightSpeed); setWheelB(leftSpeed); }
@@ -325,7 +326,7 @@ void loop() {
       break;
     }
 
-    // 後退のリカバリ：最後に黒を見た側の“逆”へ切る（進行方向が逆）
+    // 後退のリカバリ：前進時と同じ“寄せ方向”を得るため，後進では前進と同じように左右の速度を計算した後、それぞれに -1 を乗算
     case RECOVER_BACK: {
       bool recovered = recoverLine(s, BASE_BACK, -1);
       if (recovered) {
