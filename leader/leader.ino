@@ -171,6 +171,8 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   int base = (travelDir > 0) ? BASE_FWD : BASE_BACK;
   int corr = (int)(kp * e * 255.0f);
 
+  int dirSign    = (travelDir >= 0) ? 1 : -1;
+
   int left  = constrain(base + corr, MIN_PWM, MAX_PWM) * dirSign;
   int right = constrain(base - corr, MIN_PWM, MAX_PWM) * dirSign;
   setWheels(left, right);
