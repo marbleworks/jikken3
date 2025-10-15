@@ -76,21 +76,21 @@ void drivePins(int IN1, int IN2, bool cw) {
   digitalWrite(IN2, cw ? LOW  : HIGH);
 }
 
+void setWheel(int speedSigned, uint8_t in1, uint8_t in2, uint8_t pwmPin) {
+  int spd = constrain(abs(speedSigned), MIN_PWM, MAX_PWM);
+  if (speedSigned > 0)      drivePins(in1, in2, true);
+  else if (speedSigned < 0) drivePins(in1, in2, false);
+  else { digitalWrite(in1, LOW); digitalWrite(in2, LOW); }
+  analogWrite(pwmPin, spd);
+}
+
 // 速度符号付き指定：正=前進、負=後退、0=停止（惰性寄り）
 void setWheelA(int speedSigned) {
-  int spd = constrain(abs(speedSigned), MIN_PWM, MAX_PWM);
-  if (speedSigned > 0)      drivePins(A_IN1, A_IN2, true);
-  else if (speedSigned < 0) drivePins(A_IN1, A_IN2, false);
-  else { digitalWrite(A_IN1, LOW); digitalWrite(A_IN2, LOW); }
-  analogWrite(A_PWM, spd);
+  setWheel(speedSigned, A_IN1, A_IN2, A_PWM);
 }
 
 void setWheelB(int speedSigned) {
-  int spd = constrain(abs(speedSigned), MIN_PWM, MAX_PWM);
-  if (speedSigned > 0)      drivePins(B_IN1, B_IN2, true);
-  else if (speedSigned < 0) drivePins(B_IN1, B_IN2, false);
-  else { digitalWrite(B_IN1, LOW); digitalWrite(B_IN2, LOW); }
-  analogWrite(B_PWM, spd);
+  setWheel(speedSigned, B_IN1, B_IN2, B_PWM);
 }
 
 // 左右同時設定（LEFT_IS_Aに合わせて割当）
