@@ -324,6 +324,13 @@ void handleForwardEndpoint(const char* context) {
   }
 }
 
+void finishReciprocalReturn(const char* context) {
+  setWheels(0, 0);
+  Serial.print(context);
+  Serial.println(" DONE.");
+  state = DONE;
+}
+
 // ------------------ setup / loop ------------------
 void setup() {
   Serial.begin(115200);
@@ -401,9 +408,7 @@ void loop() {
         break;
       }
       if (r.endpoint && runMode == RUNMODE_RECIP) {
-        setWheels(0, 0);
-        Serial.println("Back to start. DONE.");
-        state = DONE;
+        finishReciprocalReturn("Back to start.");
       }
       break;
     }
@@ -418,9 +423,7 @@ void loop() {
       }
 
       if (endpointSeen(s.bothWhite) && runMode == RUNMODE_RECIP) {
-        setWheels(0, 0);
-        Serial.println("Back to start. DONE.");
-        state = DONE;
+        finishReciprocalReturn("Back to start.");
       }
       break;
     }
