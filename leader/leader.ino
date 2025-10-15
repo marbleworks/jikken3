@@ -42,13 +42,6 @@ inline constexpr RunMode COMPILE_TIME_RUNMODE = RUNMODE_RECIP; // 直線コー�
 inline constexpr int UTURN_SPEED = 150;        // 片輪前進・片輪後退のPWM
 inline constexpr unsigned long UTURN_TIME_MS = 600; // 180度回頭に掛ける時間（要調整）
 
-// DIP スイッチでモードを切り替える場合はピン番号を指定（未使用なら -1 のまま）
-inline constexpr int RUNMODE_DIP_PIN = -1;
-inline constexpr bool RUNMODE_DIP_USE_PULLUP = true;
-inline constexpr int RUNMODE_DIP_ACTIVE_LEVEL = LOW; // DIP ON（GNDに落とす）を LOW と想定
-inline constexpr RunMode RUNMODE_DIP_ACTIVE_MODE = RUNMODE_LOOP;
-inline constexpr RunMode RUNMODE_DIP_INACTIVE_MODE = RUNMODE_RECIP;
-
 enum State {
   SEEK_LINE_FWD,     // 端点スタート（白）→黒ラインを探しながら前進
   FOLLOW_FWD,        // 前進でライン追従
@@ -162,77 +155,6 @@ const char* runModeLabel(RunMode mode) {
   }
 }
 
-void applyDipRunMode() {
-  if (RUNMODE_DIP_PIN < 0) return;
-
-  if (RUNMODE_DIP_USE_PULLUP) pinMode(RUNMODE_DIP_PIN, INPUT_PULLUP);
-  else                        pinMode(RUNMODE_DIP_PIN, INPUT);
-
-  int level = digitalRead(RUNMODE_DIP_PIN);
-  runMode = (level == RUNMODE_DIP_ACTIVE_LEVEL) ? RUNMODE_DIP_ACTIVE_MODE : RUNMODE_DIP_INACTIVE_MODE;
-
-  Serial.print("DIP run mode selection (pin ");
-  Serial.print(RUNMODE_DIP_PIN);
-  Serial.print("): ");
-  Serial.println(runModeLabel(runMode));
-}
-
-bool parseRunModeCommand(const String& cmd, RunMode& out) {
-  String normalized = cmd;
-  normalized.trim();
-  normalized.toLowerCase();
-  if (normalized == "loop") {
-    out = RUNMODE_LOOP;
-    return true;
-  }
-  if (normalized == "uturn" || normalized == "turn") {
-    out = RUNMODE_UTURN;
-    return true;
-  }
-  if (normalized == "recip" || normalized == "reciprocal") {
-    out = RUNMODE_RECIP;
-    return true;
-  }
-  return false;
-}
-
-void awaitSerialRunModeOverride(unsigned long waitMs) {
-  if (waitMs == 0) return;
-
-  Serial.print("Send 'recip', 'uturn', or 'loop' within ");
-  Serial.print(waitMs);
-  Serial.println(" ms to override run mode...");
-
-  String buffer;
-  unsigned long deadline = millis() + waitMs;
-  while (millis() < deadline) {
-    if (Serial.available()) {
-      char c = (char)Serial.read();
-      if (c == '\n' || c == '\r') {
-        if (buffer.length() > 0) break;
-      } else {
-        buffer += c;
-      }
-    }
-  }
-
-  if (buffer.length() == 0) {
-    Serial.println("Using existing run mode selection.");
-    return;
-  }
-
-  RunMode parsed;
-  if (parseRunModeCommand(buffer, parsed)) {
-    runMode = parsed;
-    Serial.print("Run mode override via Serial: ");
-    Serial.println(runModeLabel(runMode));
-  } else {
-    Serial.print("Unknown run mode command: ");
-    Serial.println(buffer);
-    Serial.println("Keeping previous selection.");
-  }
-}
-
 FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   FollowResult res { false, false };
 
@@ -336,8 +258,6 @@ void setup() {
   Serial.begin(115200);
   runMode = COMPILE_TIME_RUNMODE;
   applyPotRunMode();
-  applyDipRunMode();
-  awaitSerialRunModeOverride(3000);
   pinMode(A_IN1, OUTPUT); pinMode(A_IN2, OUTPUT);
   pinMode(B_IN1, OUTPUT); pinMode(B_IN2, OUTPUT);
   setWheels(0, 0);
