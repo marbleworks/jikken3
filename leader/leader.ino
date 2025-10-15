@@ -15,14 +15,14 @@ unsigned long LOST_MS      = 120; // 見失い判定（FOLLOW中に両白がこ�
 int   REC_STEER      = 80;    // リカバリ時の曲げ量（左右差）
 // ----------------------------------------------------------------
 
-// ====== struct をグローバルで定義（末尾セミコロン必須）======
+// ====== struct をグローバルで定義 ======
 struct Sense {
   int  rawL, rawR;     // センサ生値
   bool isBlackL;       // 左が黒か
   bool isBlackR;       // 右が黒か
   bool bothBlack;
   bool bothWhite;
-}; // ← セミコロン必須
+};
 struct FollowResult {
   bool lineLost;
   bool endpoint;
