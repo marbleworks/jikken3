@@ -19,16 +19,16 @@ void applyPotRunMode() {
 
   int average = total / RUNMODE_POT_SAMPLES;
 
-  const int thresholdLoop = 1024 / 3;        // ≒341
-  const int thresholdUTurn = (1024 * 2) / 3; // ≒682
+  const int thresholdUTurn = 1024 / 3;        // ≒341
+  const int thresholdLoop = (1024 * 2) / 3;   // ≒682
 
   RunMode selected;
-  if (average < thresholdLoop) {
+  if (average < thresholdUTurn) {
     selected = RUNMODE_RECIP;
-  } else if (average < thresholdUTurn) {
-    selected = RUNMODE_LOOP;
-  } else {
+  } else if (average < thresholdLoop) {
     selected = RUNMODE_UTURN;
+  } else {
+    selected = RUNMODE_LOOP;
   }
 
   runMode = selected;
