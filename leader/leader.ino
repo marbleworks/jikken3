@@ -13,6 +13,8 @@ int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴�
 unsigned long END_WHITE_MS = 600; // 端点判定（両白がこの時間以上続く）
 unsigned long LOST_MS      = 120; // 見失い判定（FOLLOW中に両白がこの時間続いたらリカバリ）
 int   REC_STEER      = 80;    // リカバリ時の曲げ量（左右差）
+int   UTURN_SPEED    = 150;   // 片輪前進・片輪後退のPWM
+unsigned long UTURN_TIME_MS = 600; // 180度回頭に掛ける時間（要調整）
 // ----------------------------------------------------------------
 
 // ====== struct をグローバルで定義 ======
@@ -37,10 +39,6 @@ enum RunMode {
 };
 
 inline constexpr RunMode COMPILE_TIME_RUNMODE = RUNMODE_RECIP; // 直線コース向け既定値
-
-// 端点でその場Uターンする際のパラメータ
-inline constexpr int UTURN_SPEED = 150;        // 片輪前進・片輪後退のPWM
-inline constexpr unsigned long UTURN_TIME_MS = 600; // 180度回頭に掛ける時間（要調整）
 
 enum State {
   SEEK_LINE_FWD,     // 端点スタート（白）→黒ラインを探しながら前進
