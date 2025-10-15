@@ -335,6 +335,7 @@ void finishReciprocalReturn(const char* context) {
 void setup() {
   Serial.begin(115200);
   runMode = COMPILE_TIME_RUNMODE;
+  applyPotRunMode();
   applyDipRunMode();
   awaitSerialRunModeOverride(3000);
   pinMode(A_IN1, OUTPUT); pinMode(A_IN2, OUTPUT);
