@@ -28,10 +28,15 @@ struct Sense {
 // 状態機械
 enum RunMode {
   RUNMODE_RECIP,
-  RUNMODE_LOOP
+  RUNMODE_LOOP,
+  RUNMODE_UTURN
 };
 
 inline constexpr RunMode COMPILE_TIME_RUNMODE = RUNMODE_RECIP; // 直線コース向け既定値
+
+// 端点でその場Uターンする際のパラメータ
+inline constexpr int UTURN_SPEED = 150;        // 片輪前進・片輪後退のPWM
+inline constexpr unsigned long UTURN_TIME_MS = 600; // 180度回頭に掛ける時間（要調整）
 
 // DIP スイッチでモードを切り替える場合はピン番号を指定（未使用なら -1 のまま）
 inline constexpr int RUNMODE_DIP_PIN = -1;
@@ -148,6 +153,7 @@ const char* runModeLabel(RunMode mode) {
   switch (mode) {
     case RUNMODE_RECIP: return "Reciprocal";
     case RUNMODE_LOOP:  return "Loop";
+    case RUNMODE_UTURN: return "UTurn";
     default:            return "Unknown";
   }
 }
@@ -173,6 +179,10 @@ bool parseRunModeCommand(const String& cmd, RunMode& out) {
   normalized.toLowerCase();
   if (normalized == "loop") {
     out = RUNMODE_LOOP;
+    return true;
+  }
+  if (normalized == "uturn" || normalized == "turn") {
+    out = RUNMODE_UTURN;
     return true;
   }
   if (normalized == "recip" || normalized == "reciprocal") {
@@ -266,7 +276,7 @@ void handleForwardEndpoint(const char* context) {
     Serial.print("Endpoint ");
     Serial.print(context);
     Serial.println(" -> SEEK_LINE_BACK");
-  } else {
+  } else if (runMode == RUNMODE_LOOP) {
     ++lapCount;
     state = SEEK_LINE_FWD;
     Serial.print("Endpoint ");
@@ -274,6 +284,20 @@ void handleForwardEndpoint(const char* context) {
     Serial.print(" -> continuing loop (lap ");
     Serial.print(lapCount);
     Serial.println(")");
+  } else if (runMode == RUNMODE_UTURN) {
+    Serial.print("Endpoint ");
+    Serial.print(context);
+    Serial.println(" -> UTURN");
+
+    unsigned long start = millis();
+    while (millis() - start < UTURN_TIME_MS) {
+      setWheels(UTURN_SPEED, -UTURN_SPEED);
+      delay(5);
+    }
+
+    setWheels(0, 0);
+    state = SEEK_LINE_FWD;
+    Serial.println("UTURN complete -> SEEK_LINE_FWD");
   }
 }
 
