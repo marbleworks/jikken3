@@ -1,7 +1,8 @@
 // 可変抵抗による走行モード選択ロジック
 // 配線: 可変抵抗の中央端子を A2、両端を 5V / GND に接続すること
 
-inline constexpr int RUNMODE_POT_PIN = A2;
+#include "pins.h"
+
 inline constexpr int RUNMODE_POT_SAMPLES = 8;
 
 extern RunMode runMode;
