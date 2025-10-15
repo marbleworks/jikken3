@@ -171,14 +171,8 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   int base = (travelDir > 0) ? BASE_FWD : BASE_BACK;
   int corr = (int)(kp * e * 255.0f);
 
-  int left, right;
-  if (travelDir > 0) {
-    left  = constrain(base + corr, MIN_PWM, MAX_PWM);
-    right = constrain(base - corr, MIN_PWM, MAX_PWM);
-  } else {
-    left  = constrain(-base - corr, -MAX_PWM, -MIN_PWM);
-    right = constrain(-base + corr, -MAX_PWM, -MIN_PWM);
-  }
+  int left  = constrain(base + corr, MIN_PWM, MAX_PWM) * dirSign;
+  int right = constrain(base - corr, MIN_PWM, MAX_PWM) * dirSign;
   setWheels(left, right);
 
   res.endpoint = endpointSeen(s.bothWhite);
@@ -187,7 +181,6 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
 
 bool recoverLine(const Sense& s, int basePwm, int travelDir) {
   int dirSign = (travelDir >= 0) ? 1 : -1;
-  int baseSigned = basePwm * dirSign;
 
   int steerOffset;
   if (lastBlackDir > 0) {
@@ -199,12 +192,10 @@ bool recoverLine(const Sense& s, int basePwm, int travelDir) {
     steerOffset = rightBias ? REC_STEER : -REC_STEER;
   }
 
-  int left = baseSigned + steerOffset * dirSign;
-  int right = baseSigned - steerOffset * dirSign;
+  int left = constrain(basePwm + steerOffset, MIN_PWM, MAX_PWM) * dirSign;
+  int right = constrain(basePwm - steerOffset, MIN_PWM, MAX_PWM) * dirSign;
 
-  int minVal = (dirSign > 0) ? MIN_PWM : -MAX_PWM;
-  int maxVal = (dirSign > 0) ? MAX_PWM : -MIN_PWM;
-  setWheels(constrain(left, minVal, maxVal), constrain(right, minVal, maxVal));
+  setWheels(left, right);
 
   return (s.isBlackL || s.isBlackR || s.bothBlack);
 }
