@@ -32,8 +32,8 @@ struct FollowResult {
 // 状態機械
 enum RunMode {
   RUNMODE_RECIP,
-  RUNMODE_LOOP,
-  RUNMODE_UTURN
+  RUNMODE_UTURN,
+  RUNMODE_LOOP
 };
 
 inline constexpr RunMode COMPILE_TIME_RUNMODE = RUNMODE_RECIP; // 直線コース向け既定値
@@ -156,8 +156,8 @@ bool endpointSeen(bool bothWhiteNow) {
 const char* runModeLabel(RunMode mode) {
   switch (mode) {
     case RUNMODE_RECIP: return "Reciprocal";
-    case RUNMODE_LOOP:  return "Loop";
     case RUNMODE_UTURN: return "UTurn";
+    case RUNMODE_LOOP:  return "Loop";
     default:            return "Unknown";
   }
 }
@@ -199,7 +199,7 @@ bool parseRunModeCommand(const String& cmd, RunMode& out) {
 void awaitSerialRunModeOverride(unsigned long waitMs) {
   if (waitMs == 0) return;
 
-  Serial.print("Send 'recip' or 'loop' within ");
+  Serial.print("Send 'recip', 'uturn', or 'loop' within ");
   Serial.print(waitMs);
   Serial.println(" ms to override run mode...");
 
@@ -335,6 +335,7 @@ void finishReciprocalReturn(const char* context) {
 void setup() {
   Serial.begin(115200);
   runMode = COMPILE_TIME_RUNMODE;
+  applyPotRunMode();
   applyDipRunMode();
   awaitSerialRunModeOverride(3000);
   pinMode(A_IN1, OUTPUT); pinMode(A_IN2, OUTPUT);
