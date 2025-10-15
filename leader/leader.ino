@@ -177,62 +177,6 @@ void applyDipRunMode() {
   Serial.println(runModeLabel(runMode));
 }
 
-bool parseRunModeCommand(const String& cmd, RunMode& out) {
-  String normalized = cmd;
-  normalized.trim();
-  normalized.toLowerCase();
-  if (normalized == "loop") {
-    out = RUNMODE_LOOP;
-    return true;
-  }
-  if (normalized == "uturn" || normalized == "turn") {
-    out = RUNMODE_UTURN;
-    return true;
-  }
-  if (normalized == "recip" || normalized == "reciprocal") {
-    out = RUNMODE_RECIP;
-    return true;
-  }
-  return false;
-}
-
-void awaitSerialRunModeOverride(unsigned long waitMs) {
-  if (waitMs == 0) return;
-
-  Serial.print("Send 'recip', 'uturn', or 'loop' within ");
-  Serial.print(waitMs);
-  Serial.println(" ms to override run mode...");
-
-  String buffer;
-  unsigned long deadline = millis() + waitMs;
-  while (millis() < deadline) {
-    if (Serial.available()) {
-      char c = (char)Serial.read();
-      if (c == '\n' || c == '\r') {
-        if (buffer.length() > 0) break;
-      } else {
-        buffer += c;
-      }
-    }
-  }
-
-  if (buffer.length() == 0) {
-    Serial.println("Using existing run mode selection.");
-    return;
-  }
-
-  RunMode parsed;
-  if (parseRunModeCommand(buffer, parsed)) {
-    runMode = parsed;
-    Serial.print("Run mode override via Serial: ");
-    Serial.println(runModeLabel(runMode));
-  } else {
-    Serial.print("Unknown run mode command: ");
-    Serial.println(buffer);
-    Serial.println("Keeping previous selection.");
-  }
-}
-
 FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   FollowResult res { false, false };
 
@@ -337,7 +281,6 @@ void setup() {
   runMode = COMPILE_TIME_RUNMODE;
   applyPotRunMode();
   applyDipRunMode();
-  awaitSerialRunModeOverride(3000);
   pinMode(A_IN1, OUTPUT); pinMode(A_IN2, OUTPUT);
   pinMode(B_IN1, OUTPUT); pinMode(B_IN2, OUTPUT);
   setWheels(0, 0);
