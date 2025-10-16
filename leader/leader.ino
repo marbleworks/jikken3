@@ -246,6 +246,9 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   setWheels(left, right);
 
   res.endpoint = endpointSeen(s.allWhite);
+
+  Serial.println(e);
+  Serial.println(runMode);
   return res;
 }
 
