@@ -119,6 +119,9 @@ Sense readSensors() {
   else if (s.isBlackR && !s.isBlackL) lastBlackDir = +1;
   else if (s.bothBlack)               lastBlackDir = 0;
 
+  digitalWrite(LED_LEFT_SENSOR,  s.isBlackL ? HIGH : LOW);
+  digitalWrite(LED_RIGHT_SENSOR, s.isBlackR ? HIGH : LOW);
+
   return s;
 }
 
@@ -252,6 +255,10 @@ void setup() {
   applyPotRunMode();
   pinMode(A_IN1, OUTPUT); pinMode(A_IN2, OUTPUT);
   pinMode(B_IN1, OUTPUT); pinMode(B_IN2, OUTPUT);
+  pinMode(LED_LEFT_SENSOR, OUTPUT);
+  pinMode(LED_RIGHT_SENSOR, OUTPUT);
+  digitalWrite(LED_LEFT_SENSOR, LOW);
+  digitalWrite(LED_RIGHT_SENSOR, LOW);
   setWheels(0, 0);
   Serial.print("Power-on (run mode: ");
   Serial.print(runModeLabel(runMode));
