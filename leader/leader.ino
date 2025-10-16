@@ -63,6 +63,9 @@ bool lastAllWhite = false;
 unsigned long whiteSinceFollow = 0;  // FOLLOW中の「全白開始時刻」（見失い判定用）
 int lastBlackDir = 0;                // -1=左が黒, +1=右が黒, 0=両黒/不明（最後に黒を見た側の記録）
 
+// センサ極性（黒ラインで値が大きくなるか小さくなるか）を自動判別した結果
+bool sensorBlackIsHigh = true;
+
 // ------------------ 低レベル：モータ制御 ------------------
 void drivePins(int IN1, int IN2, bool cw) {
   digitalWrite(IN1, cw ? HIGH : LOW);
@@ -94,6 +97,17 @@ void setWheels(int leftSpeed, int rightSpeed) {
 }
 
 // ------------------ センサ関連（struct 定義後に関数を定義） ------------------
+bool isBlackReading(int raw, bool lastWasBlack) {
+  int thHigh = THRESHOLD + HYST;
+  int thLow  = THRESHOLD - HYST;
+
+  if (sensorBlackIsHigh) {
+    return lastWasBlack ? (raw > thLow) : (raw > thHigh);
+  } else {
+    return lastWasBlack ? (raw < thHigh) : (raw < thLow);
+  }
+}
+
 Sense readSensors() {
   Sense s;
   s.rawL = analogRead(pinL);
@@ -102,17 +116,9 @@ Sense readSensors() {
 
   // ヒステリシス付き判定
   static bool lastLBlack=false, lastCBlack=false, lastRBlack=false;
-  int thH = THRESHOLD + HYST;
-  int thL = THRESHOLD - HYST;
-
-  if (lastLBlack) s.isBlackL = (s.rawL > thL);
-  else            s.isBlackL = (s.rawL > thH);
-
-  if (lastCBlack) s.isBlackC = (s.rawC > thL);
-  else            s.isBlackC = (s.rawC > thH);
-
-  if (lastRBlack) s.isBlackR = (s.rawR > thL);
-  else            s.isBlackR = (s.rawR > thH);
+  s.isBlackL = isBlackReading(s.rawL, lastLBlack);
+  s.isBlackC = isBlackReading(s.rawC, lastCBlack);
+  s.isBlackR = isBlackReading(s.rawR, lastRBlack);
 
   lastLBlack = s.isBlackL;
   lastCBlack = s.isBlackC;
@@ -138,15 +144,59 @@ Sense readSensors() {
 // 誤差（右正）：正→右寄り、負→左寄り
 float computeError(int rawL, int rawC, int rawR) {
   const float span = 1000.0f - 40.0f; // 想定レンジ
-  float weightL = max(0.0f, (float)(rawL - THRESHOLD)) / span;
-  float weightC = max(0.0f, (float)(rawC - THRESHOLD)) / span;
-  float weightR = max(0.0f, (float)(rawR - THRESHOLD)) / span;
+  float weightL;
+  float weightC;
+  float weightR;
+
+  if (sensorBlackIsHigh) {
+    weightL = max(0.0f, (float)(rawL - THRESHOLD)) / span;
+    weightC = max(0.0f, (float)(rawC - THRESHOLD)) / span;
+    weightR = max(0.0f, (float)(rawR - THRESHOLD)) / span;
+  } else {
+    weightL = max(0.0f, (float)(THRESHOLD - rawL)) / span;
+    weightC = max(0.0f, (float)(THRESHOLD - rawC)) / span;
+    weightR = max(0.0f, (float)(THRESHOLD - rawR)) / span;
+  }
   float total = weightL + weightC + weightR;
   if (total < 0.001f) {
     return 0.0f;
   }
   float position = (-1.0f * weightL + 1.0f * weightR) / total;
   return position;
+}
+
+void calibrateSensorPolarity() {
+  const int samples = 16;
+  long total = 0;
+
+  for (int i = 0; i < samples; ++i) {
+    total += analogRead(pinL);
+    total += analogRead(pinC);
+    total += analogRead(pinR);
+    delay(2);
+  }
+
+  int avg = total / (samples * 3);
+  bool previous = sensorBlackIsHigh;
+
+  if (avg > THRESHOLD + HYST) {
+    sensorBlackIsHigh = false;
+  } else if (avg < THRESHOLD - HYST) {
+    sensorBlackIsHigh = true;
+  }
+
+  Serial.print("Sensor polarity auto-detect: baseline=");
+  Serial.print(avg);
+  Serial.print(" -> ");
+  if (sensorBlackIsHigh) {
+    Serial.println("BLACK=HIGH");
+  } else {
+    Serial.println("BLACK=LOW");
+  }
+
+  if (previous != sensorBlackIsHigh) {
+    Serial.println("Polarity adjusted automatically.");
+  }
 }
 
 // ------------------ 端点（全白）検出のデバウンス ------------------
@@ -267,6 +317,7 @@ void setup() {
   Serial.begin(115200);
   runMode = COMPILE_TIME_RUNMODE;
   applyPotRunMode();
+  calibrateSensorPolarity();
   pinMode(A_IN1, OUTPUT); pinMode(A_IN2, OUTPUT);
   pinMode(B_IN1, OUTPUT); pinMode(B_IN2, OUTPUT);
   pinMode(LED_LEFT_SENSOR, OUTPUT);
