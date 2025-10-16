@@ -7,14 +7,14 @@ int   BASE_FWD       = 160;   // 前進の基準PWM
 int   BASE_BACK      = 150;   // 後退の基準PWM
 float KP_FWD         = 0.20;  // 前進Pゲイン
 float KP_BACK        = 0.20;  // 後退Pゲイン
-int   MAX_PWM        = 255;   // PWM上限
+int   MAX_PWM        = 128;   // PWM上限
 int   MIN_PWM        = 0;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
 unsigned long END_WHITE_MS = 600; // 端点判定（両白がこの時間以上続く）
 unsigned long LOST_MS      = 120; // 見失い判定（FOLLOW中に両白がこの時間続いたらリカバリ）
-int   REC_STEER      = 80;    // リカバリ時の曲げ量（左右差）
+int   REC_STEER      = 128;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED    = 150;   // 片輪前進・片輪後退のPWM
-unsigned long UTURN_TIME_MS = 600; // 180度回頭に掛ける時間（要調整）
+unsigned long UTURN_TIME_MS = 3000; // 180度回頭に掛ける時間（要調整）
 // ----------------------------------------------------------------
 
 // ====== struct をグローバルで定義 ======
