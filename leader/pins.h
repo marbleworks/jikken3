@@ -3,8 +3,8 @@
 
 // ===== センサ配線 =====
 inline constexpr uint8_t pinL = A0;  // 左
-inline constexpr uint8_t pinC = A2;  // 中央
-inline constexpr uint8_t pinR = A1;  // 右
+inline constexpr uint8_t pinC = A1;  // 中央
+inline constexpr uint8_t pinR = A2;  // 右
 
 // ===== 実行モード選択用可変抵抗 =====
 inline constexpr uint8_t RUNMODE_POT_PIN = A5;
