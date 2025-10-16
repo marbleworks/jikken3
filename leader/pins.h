@@ -6,7 +6,7 @@ inline constexpr uint8_t pinL = A0;  // 左
 inline constexpr uint8_t pinR = A1;  // 右
 
 // ===== 実行モード選択用可変抵抗 =====
-inline constexpr uint8_t RUNMODE_POT_PIN = A2;
+inline constexpr uint8_t RUNMODE_POT_PIN = A5;
 
 // ===== モータ配線（例） =====
 // モータA（左）
