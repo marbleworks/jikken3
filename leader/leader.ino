@@ -5,9 +5,9 @@ int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調�
 int   HYST           = 40;    // ヒステリシス
 int   BASE_FWD       = 160;   // 前進の基準PWM
 int   BASE_BACK      = 150;   // 後退の基準PWM
-float KP_FWD         = 0.20;  // 前進Pゲイン
-float KP_BACK        = 0.20;  // 後退Pゲイン
-int   MAX_PWM        = 128;   // PWM上限
+float KP_FWD         = 1;  // 前進Pゲイン
+float KP_BACK        = 1;  // 後退Pゲイン
+int   MAX_PWM        = 96;   // PWM上限
 int   MIN_PWM        = 0;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
 unsigned long END_WHITE_MS = 800; // 端点判定（全白がこの時間以上続く）
@@ -283,6 +283,8 @@ void setup() {
 
 void loop() {
   Sense s = readSensors();
+  Serial.println(state);
+  // setWheels(128,0);
 
   switch (state) {
     // 端点(全白)から前進して黒ラインを掴む
