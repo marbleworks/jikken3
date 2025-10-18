@@ -6,6 +6,10 @@
 extern int THRESHOLD;
 extern int HYST;
 
+static bool applyHysteresis(int raw, bool lastState, int thH, int thL) {
+  return lastState ? (raw > thL) : (raw > thH);
+}
+
 Sense readSensors() {
   Sense s{};
   s.rawL = analogRead(pinL);
@@ -18,14 +22,9 @@ Sense readSensors() {
   int thH = THRESHOLD + HYST;
   int thL = THRESHOLD - HYST;
 
-  if (lastLBlack) s.isBlackL = (s.rawL > thL);
-  else            s.isBlackL = (s.rawL > thH);
-
-  if (lastCBlack) s.isBlackC = (s.rawC > thL);
-  else            s.isBlackC = (s.rawC > thH);
-
-  if (lastRBlack) s.isBlackR = (s.rawR > thL);
-  else            s.isBlackR = (s.rawR > thH);
+  s.isBlackL = applyHysteresis(s.rawL, lastLBlack, thH, thL);
+  s.isBlackC = applyHysteresis(s.rawC, lastCBlack, thH, thL);
+  s.isBlackR = applyHysteresis(s.rawR, lastRBlack, thH, thL);
 
   lastLBlack = s.isBlackL;
   lastCBlack = s.isBlackC;
