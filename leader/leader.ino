@@ -183,7 +183,6 @@ void setup() {
   applyPotRunMode();
   setupWheelPins();
   setupSensorLeds();
-  setWheels(0, 0);
   Serial.print("Power-on (run mode: ");
   Serial.print(runModeLabel(runMode));
   Serial.println(") -> SEEK_LINE_FWD");
