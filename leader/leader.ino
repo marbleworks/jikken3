@@ -1,5 +1,6 @@
 #include "pins.h"
 #include "sensor_leds.h"
+#include "sensors.h"
 #include "wheel_control.h"
 
 // ------------------ チューニング用パラメータ ------------------
@@ -20,15 +21,6 @@ unsigned long UTURN_TIME_MS = 3000; // 180度回頭に掛ける時間（要調�
 // ----------------------------------------------------------------
 
 // ====== struct をグローバルで定義 ======
-struct Sense {
-  int  rawL, rawC, rawR; // センサ生値
-  bool isBlackL;         // 左が黒か
-  bool isBlackC;         // 中央が黒か
-  bool isBlackR;         // 右が黒か
-  bool anyBlack;         // いずれかが黒か
-  bool allBlack;         // 全て黒か
-  bool allWhite;         // 全て白か
-};
 struct FollowResult {
   bool lineLost;
   bool endpoint;
@@ -63,62 +55,6 @@ unsigned long allWhiteSince = 0; // 全白が続いている開始時刻（端�
 bool lastAllWhite = false;
 
 unsigned long whiteSinceFollow = 0;  // FOLLOW中の「全白開始時刻」（見失い判定用）
-int lastBlackDir = 0;                // -1=左が黒, +1=右が黒, 0=両黒/不明（最後に黒を見た側の記録）
-
-// ------------------ センサ関連（struct 定義後に関数を定義） ------------------
-Sense readSensors() {
-  Sense s;
-  s.rawL = analogRead(pinL);
-  s.rawC = analogRead(pinC);
-  s.rawR = analogRead(pinR);
-
-  // ヒステリシス付き判定
-  static bool lastLBlack=false, lastCBlack=false, lastRBlack=false;
-  int thH = THRESHOLD + HYST;
-  int thL = THRESHOLD - HYST;
-
-  if (lastLBlack) s.isBlackL = (s.rawL > thL);
-  else            s.isBlackL = (s.rawL > thH);
-
-  if (lastCBlack) s.isBlackC = (s.rawC > thL);
-  else            s.isBlackC = (s.rawC > thH);
-
-  if (lastRBlack) s.isBlackR = (s.rawR > thL);
-  else            s.isBlackR = (s.rawR > thH);
-
-  lastLBlack = s.isBlackL;
-  lastCBlack = s.isBlackC;
-  lastRBlack = s.isBlackR;
-
-  s.anyBlack = s.isBlackL || s.isBlackC || s.isBlackR;
-  s.allBlack = s.isBlackL && s.isBlackC && s.isBlackR;
-  s.allWhite = !s.anyBlack;
-
-  // 最後に黒を見た側を更新
-  if (s.isBlackL && !s.isBlackR)      lastBlackDir = -1;
-  else if (s.isBlackR && !s.isBlackL) lastBlackDir = +1;
-  else if (s.isBlackC)                lastBlackDir = 0;
-  else if (s.allBlack)                lastBlackDir = 0;
-
-  displaySensorStates(s.isBlackL, s.isBlackC, s.isBlackR);
-
-  return s;
-}
-
-// 誤差（右正）：正→右寄り、負→左寄り
-float computeError(int rawL, int rawC, int rawR) {
-  const float span = 1000.0f - 40.0f; // 想定レンジ
-  float weightL = max(0.0f, (float)(rawL - THRESHOLD)) / span;
-  float weightC = max(0.0f, (float)(rawC - THRESHOLD)) / span;
-  float weightR = max(0.0f, (float)(rawR - THRESHOLD)) / span;
-  float total = weightL + weightC + weightR;
-  if (total < 0.001f) {
-    return 0.0f;
-  }
-  float position = (-1.0f * weightL + 1.0f * weightR) / total;
-  return position;
-}
-
 // ------------------ 端点（全白）検出のデバウンス ------------------
 bool endpointSeen(bool allWhiteNow) {
   unsigned long t = millis();
@@ -173,9 +109,10 @@ bool recoverLine(const Sense& s, int basePwm, int travelDir) {
   int dirSign = (travelDir >= 0) ? 1 : -1;
 
   int steerOffset;
-  if (lastBlackDir > 0) {
+  int lastDir = getLastBlackDir();
+  if (lastDir > 0) {
     steerOffset = REC_STEER;
-  } else if (lastBlackDir < 0) {
+  } else if (lastDir < 0) {
     steerOffset = -REC_STEER;
   } else {
     bool rightBias = (millis() / 300) % 2;
