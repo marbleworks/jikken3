@@ -62,6 +62,16 @@ void updateLastBlackDirState(const Sense& s) {
     lastBlackDirState = getBlackDirState(s);
   }
 }
+
+void handleSeekLine(State followState, int speedSign, const __FlashStringHelper* logMsg, const Sense& s) {
+  int speed = speedSign * SEEK_SPEED;
+  setWheels(speed, speed);
+  if (s.anyBlack) {
+    state = followState;
+    whiteSinceFollow = 0;
+    Serial.println(logMsg);
+  }
+}
 // ------------------ 端点（全白）検出のデバウンス ------------------
 bool endpointSeen(bool allWhiteNow) {
   unsigned long t = millis();
@@ -197,12 +207,7 @@ void loop() {
   switch (state) {
     // 端点(全白)から前進して黒ラインを掴む
     case SEEK_LINE_FWD: {
-      setWheels(SEEK_SPEED, SEEK_SPEED);
-      if (s.anyBlack) {
-        state = FOLLOW_FWD;
-        whiteSinceFollow = 0;
-        Serial.println("-> FOLLOW_FWD");
-      }
+      handleSeekLine(FOLLOW_FWD, +1, F("-> FOLLOW_FWD"), s);
       break;
     }
 
@@ -237,12 +242,7 @@ void loop() {
 
     // 折り返し：後退で黒ライン再捕捉
     case SEEK_LINE_BACK: {
-      setWheels(-SEEK_SPEED, -SEEK_SPEED);
-      if (s.anyBlack) {
-        state = FOLLOW_BACK;
-        whiteSinceFollow = 0;
-        Serial.println("-> FOLLOW_BACK");
-      }
+      handleSeekLine(FOLLOW_BACK, -1, F("-> FOLLOW_BACK"), s);
       break;
     }
 
