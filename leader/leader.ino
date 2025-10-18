@@ -144,6 +144,28 @@ bool recoverLine(const Sense& s, int basePwm, int travelDir) {
   return s.anyBlack;
 }
 
+typedef void (*EndpointHandler)(const char* context);
+
+void handleRecover(const Sense& s,
+                   State followState,
+                   int basePwm,
+                   int travelDir,
+                   const __FlashStringHelper* logMsg,
+                   EndpointHandler endpointHandler,
+                   const char* endpointContext,
+                   bool enableEndpointHandling) {
+  bool recovered = recoverLine(s, basePwm, travelDir);
+  if (recovered) {
+    whiteSinceFollow = 0;
+    state = followState;
+    Serial.println(logMsg);
+  }
+
+  if (enableEndpointHandling && endpointHandler != nullptr && endpointSeen(s.allWhite)) {
+    endpointHandler(endpointContext);
+  }
+}
+
 void handleForwardEndpoint(const char* context) {
   setWheels(0, 0);
   delay(150);
@@ -226,17 +248,14 @@ void loop() {
 
     // 前進のリカバリ：最後に黒を見た側へ強めに切りながら再捕捉
     case RECOVER_FWD: {
-      bool recovered = recoverLine(s, BASE_FWD, +1);
-      if (recovered) {
-        whiteSinceFollow = 0;
-        state = FOLLOW_FWD;
-        Serial.println("Recovered (forward) -> FOLLOW_FWD");
-      }
-
-      // リカバリ中でも端点ならモードに応じて処理
-      if (endpointSeen(s.allWhite)) {
-        handleForwardEndpoint("(recover fwd)");
-      }
+      handleRecover(s,
+                    FOLLOW_FWD,
+                    BASE_FWD,
+                    +1,
+                    F("Recovered (forward) -> FOLLOW_FWD"),
+                    handleForwardEndpoint,
+                    "(recover fwd)",
+                    true);
       break;
     }
 
@@ -261,16 +280,14 @@ void loop() {
 
     // 後退のリカバリ：前進時と同じ“寄せ方向”を得るため，後進では前進と同じように左右の速度を計算した後、それぞれに -1 を乗算
     case RECOVER_BACK: {
-      bool recovered = recoverLine(s, BASE_BACK, -1);
-      if (recovered) {
-        whiteSinceFollow = 0;
-        state = FOLLOW_BACK;
-        Serial.println("Recovered (back) -> FOLLOW_BACK");
-      }
-
-      if (endpointSeen(s.allWhite) && runMode == RUNMODE_RECIP) {
-        finishReciprocalReturn("Back to start.");
-      }
+      handleRecover(s,
+                    FOLLOW_BACK,
+                    BASE_BACK,
+                    -1,
+                    F("Recovered (back) -> FOLLOW_BACK"),
+                    finishReciprocalReturn,
+                    "Back to start.",
+                    runMode == RUNMODE_RECIP);
       break;
     }
 
