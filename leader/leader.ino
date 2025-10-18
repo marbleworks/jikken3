@@ -58,6 +58,8 @@ Timer lostTimer;
 int lastBlackDirState = 0;           // -1=左, +1=右, 0=中央/不明
 Timer uturnTimer;
 
+typedef void (*EndpointHandler)(const char* context);
+
 void handleUTurn() {
   if (!uturnTimer.running()) {
     uturnTimer.start();
@@ -164,8 +166,6 @@ bool recoverLine(const Sense& s, int basePwm, int travelDir) {
 
   return s.anyBlack;
 }
-
-typedef void (*EndpointHandler)(const char* context);
 
 void handleRecover(const Sense& s,
                    State followState,
