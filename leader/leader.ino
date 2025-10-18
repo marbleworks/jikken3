@@ -2,6 +2,7 @@
 #include "sensor_leds.h"
 #include "sensors.h"
 #include "wheel_control.h"
+#include "timer.h"
 
 // ------------------ チューニング用パラメータ ------------------
 int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
@@ -52,15 +53,17 @@ RunMode runMode = COMPILE_TIME_RUNMODE;
 unsigned long lapCount = 0; // RUNMODE_LOOP で端点を通過した回数
 
 // 端点検出・見失い管理
-unsigned long allWhiteSince = 0; // 全白が続いている開始時刻（端点判定用）
-bool lastAllWhite = false;
-
-unsigned long whiteSinceFollow = 0;  // FOLLOW中の「全白開始時刻」（見失い判定用）
+Timer endpointTimer;
+Timer lostTimer;
 int lastBlackDirState = 0;           // -1=左, +1=右, 0=中央/不明
-unsigned long uturnStart = 0;        // Uターン開始時刻
+Timer uturnTimer;
 
 void handleUTurn() {
-  unsigned long elapsed = millis() - uturnStart;
+  if (!uturnTimer.running()) {
+    uturnTimer.start();
+  }
+
+  unsigned long elapsed = uturnTimer.elapsed();
   if (elapsed < UTURN_TIME_MS) {
     setWheels(UTURN_SPEED, -UTURN_SPEED);
     return;
@@ -68,7 +71,8 @@ void handleUTurn() {
 
   setWheels(0, 0);
   state = SEEK_LINE_FWD;
-  whiteSinceFollow = 0;
+  lostTimer.reset();
+  uturnTimer.reset();
   Serial.println(F("UTURN complete -> SEEK_LINE_FWD"));
 }
 
@@ -83,19 +87,19 @@ void handleSeekLine(State followState, int speedSign, const __FlashStringHelper*
   setWheels(speed, speed);
   if (s.anyBlack) {
     state = followState;
-    whiteSinceFollow = 0;
+    lostTimer.reset();
     Serial.println(logMsg);
   }
 }
 // ------------------ 端点（全白）検出のデバウンス ------------------
 bool endpointSeen(bool allWhiteNow) {
-  unsigned long t = millis();
   if (allWhiteNow) {
-    if (!lastAllWhite) allWhiteSince = t; // 立ち上がり
-    lastAllWhite = true;
-    return (t - allWhiteSince) >= END_WHITE_MS;
+    if (!endpointTimer.running()) {
+      endpointTimer.start();
+    }
+    return endpointTimer.elapsed() >= END_WHITE_MS;
   } else {
-    lastAllWhite = false;
+    endpointTimer.reset();
     return false;
   }
 }
@@ -113,13 +117,15 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   FollowResult res { false, false };
 
   if (s.allWhite) {
-    if (whiteSinceFollow == 0) whiteSinceFollow = millis();
-    if (millis() - whiteSinceFollow > LOST_MS) {
+    if (!lostTimer.running()) {
+      lostTimer.start();
+    }
+    if (lostTimer.elapsed() > LOST_MS) {
       res.lineLost = true;
       return res;
     }
   } else {
-    whiteSinceFollow = 0;
+    lostTimer.reset();
   }
 
   float e = computeError(s.rawL, s.rawC, s.rawR);
@@ -171,7 +177,7 @@ void handleRecover(const Sense& s,
                    bool enableEndpointHandling) {
   bool recovered = recoverLine(s, basePwm, travelDir);
   if (recovered) {
-    whiteSinceFollow = 0;
+    lostTimer.reset();
     state = followState;
     Serial.println(logMsg);
   }
@@ -184,7 +190,7 @@ void handleRecover(const Sense& s,
 void handleForwardEndpoint(const char* context) {
   setWheels(0, 0);
   delay(150);
-  whiteSinceFollow = 0;
+  lostTimer.reset();
 
   if (runMode == RUNMODE_RECIP) {
     state = SEEK_LINE_BACK;
@@ -204,7 +210,7 @@ void handleForwardEndpoint(const char* context) {
     Serial.print(context);
     Serial.println(" -> UTURN");
 
-    uturnStart = millis();
+    uturnTimer.start();
     state = UTURN;
   }
 }
