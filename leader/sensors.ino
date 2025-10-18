@@ -6,10 +6,6 @@
 extern int THRESHOLD;
 extern int HYST;
 
-namespace {
-int lastBlackDirState = 0;  // -1=左, +1=右, 0=中央/不明
-}
-
 Sense readSensors() {
   Sense s{};
   s.rawL = analogRead(pinL);
@@ -39,14 +35,22 @@ Sense readSensors() {
   s.allBlack = s.isBlackL && s.isBlackC && s.isBlackR;
   s.allWhite = !s.anyBlack;
 
-  if (s.isBlackL && !s.isBlackR)      lastBlackDirState = -1;
-  else if (s.isBlackR && !s.isBlackL) lastBlackDirState = +1;
-  else if (s.isBlackC)                lastBlackDirState = 0;
-  else if (s.allBlack)                lastBlackDirState = 0;
-
   displaySensorStates(s.isBlackL, s.isBlackC, s.isBlackR);
 
   return s;
+}
+
+int getBlackDirState(const Sense& s) {
+  if (s.isBlackL && !s.isBlackR) {
+    return -1;
+  }
+  if (s.isBlackR && !s.isBlackL) {
+    return +1;
+  }
+  if (s.isBlackC || s.allBlack) {
+    return 0;
+  }
+  return 0;
 }
 
 float computeError(int rawL, int rawC, int rawR) {
@@ -61,8 +65,3 @@ float computeError(int rawL, int rawC, int rawR) {
   float position = (-1.0f * weightL + 1.0f * weightR) / total;
   return position;
 }
-
-int getLastBlackDir() {
-  return lastBlackDirState;
-}
-
