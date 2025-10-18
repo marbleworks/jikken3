@@ -22,6 +22,22 @@ void setWheel(int speedSigned, uint8_t in1, uint8_t in2, uint8_t pwmPin) {
 }
 }  // namespace
 
+void setupWheelPins() {
+  pinMode(A_IN1, OUTPUT);
+  pinMode(A_IN2, OUTPUT);
+  pinMode(A_PWM, OUTPUT);
+  pinMode(B_IN1, OUTPUT);
+  pinMode(B_IN2, OUTPUT);
+  pinMode(B_PWM, OUTPUT);
+
+  digitalWrite(A_IN1, LOW);
+  digitalWrite(A_IN2, LOW);
+  digitalWrite(B_IN1, LOW);
+  digitalWrite(B_IN2, LOW);
+  analogWrite(A_PWM, 0);
+  analogWrite(B_PWM, 0);
+}
+
 void setWheelA(int speedSigned) {
   setWheel(speedSigned, A_IN1, A_IN2, A_PWM);
 }

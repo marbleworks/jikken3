@@ -3,6 +3,7 @@
 #include <Arduino.h>
 
 // 速度符号付き指定：正=前進、負=後退、0=停止（惰性寄り）
+void setupWheelPins();
 void setWheelA(int speedSigned);
 void setWheelB(int speedSigned);
 
