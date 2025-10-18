@@ -181,8 +181,7 @@ void setup() {
   Serial.begin(115200);
   runMode = COMPILE_TIME_RUNMODE;
   applyPotRunMode();
-  pinMode(A_IN1, OUTPUT); pinMode(A_IN2, OUTPUT);
-  pinMode(B_IN1, OUTPUT); pinMode(B_IN2, OUTPUT);
+  setupWheelPins();
   setupSensorLeds();
   setWheels(0, 0);
   Serial.print("Power-on (run mode: ");
