@@ -3,6 +3,7 @@
 #include "sensors.h"
 #include "wheel_control.h"
 #include "timer.h"
+#include "run_mode.h"
 
 // ------------------ チューニング用パラメータ ------------------
 int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
@@ -28,15 +29,6 @@ struct FollowResult {
 };
 // =================================================================
 
-// 状態機械
-enum RunMode {
-  RUNMODE_RECIP,
-  RUNMODE_UTURN,
-  RUNMODE_LOOP
-};
-
-inline constexpr RunMode COMPILE_TIME_RUNMODE = RUNMODE_RECIP; // 直線コース向け既定値
-
 enum State {
   SEEK_LINE_FWD,     // 端点スタート（白）→黒ラインを探しながら前進
   FOLLOW_FWD,        // 前進でライン追従
@@ -48,7 +40,6 @@ enum State {
   DONE               // 完了（停止）
 };
 State state = SEEK_LINE_FWD;
-RunMode runMode = COMPILE_TIME_RUNMODE;
 
 unsigned long lapCount = 0; // RUNMODE_LOOP で端点を通過した回数
 
@@ -103,15 +94,6 @@ bool endpointSeen(bool allWhiteNow) {
   } else {
     endpointTimer.reset();
     return false;
-  }
-}
-
-const char* runModeLabel(RunMode mode) {
-  switch (mode) {
-    case RUNMODE_RECIP: return "Reciprocal";
-    case RUNMODE_UTURN: return "UTurn";
-    case RUNMODE_LOOP:  return "Loop";
-    default:            return "Unknown";
   }
 }
 

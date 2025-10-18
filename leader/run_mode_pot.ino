@@ -2,11 +2,9 @@
 // 配線: 可変抵抗の中央端子を A5、両端を 5V / GND に接続すること
 
 #include "pins.h"
+#include "run_mode.h"
 
 inline constexpr int RUNMODE_POT_SAMPLES = 8;
-
-extern RunMode runMode;
-extern const char* runModeLabel(RunMode mode);
 
 void applyPotRunMode() {
   if (!RUNMODE_POT_ENABLED) return;
