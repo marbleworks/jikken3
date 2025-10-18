@@ -1,4 +1,5 @@
 #include "pins.h"
+#include "sensor_leds.h"
 
 // ------------------ チューニング用パラメータ ------------------
 int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
@@ -128,9 +129,7 @@ Sense readSensors() {
   else if (s.isBlackC)                lastBlackDir = 0;
   else if (s.allBlack)                lastBlackDir = 0;
 
-  digitalWrite(LED_LEFT_SENSOR,  s.isBlackL ? HIGH : LOW);
-  digitalWrite(LED_CENTER_SENSOR,s.isBlackC ? HIGH : LOW);
-  digitalWrite(LED_RIGHT_SENSOR, s.isBlackR ? HIGH : LOW);
+  displaySensorStates(s.isBlackL, s.isBlackC, s.isBlackR);
 
   return s;
 }
@@ -269,12 +268,7 @@ void setup() {
   applyPotRunMode();
   pinMode(A_IN1, OUTPUT); pinMode(A_IN2, OUTPUT);
   pinMode(B_IN1, OUTPUT); pinMode(B_IN2, OUTPUT);
-  pinMode(LED_LEFT_SENSOR, OUTPUT);
-  pinMode(LED_CENTER_SENSOR, OUTPUT);
-  pinMode(LED_RIGHT_SENSOR, OUTPUT);
-  digitalWrite(LED_LEFT_SENSOR, LOW);
-  digitalWrite(LED_CENTER_SENSOR, LOW);
-  digitalWrite(LED_RIGHT_SENSOR, LOW);
+  setupSensorLeds();
   setWheels(0, 0);
   Serial.print("Power-on (run mode: ");
   Serial.print(runModeLabel(runMode));
