@@ -43,6 +43,7 @@ enum State {
   SEEK_LINE_BACK,    // 折り返し（後退で黒ライン再捕捉）
   FOLLOW_BACK,       // 後退でライン追従（復路）
   RECOVER_BACK,      // 後退中に見失い→自動復帰
+  UTURN,             // Uターン中
   DONE               // 完了（停止）
 };
 State state = SEEK_LINE_FWD;
@@ -56,6 +57,20 @@ bool lastAllWhite = false;
 
 unsigned long whiteSinceFollow = 0;  // FOLLOW中の「全白開始時刻」（見失い判定用）
 int lastBlackDirState = 0;           // -1=左, +1=右, 0=中央/不明
+unsigned long uturnStart = 0;        // Uターン開始時刻
+
+void handleUTurn() {
+  unsigned long elapsed = millis() - uturnStart;
+  if (elapsed < UTURN_TIME_MS) {
+    setWheels(UTURN_SPEED, -UTURN_SPEED);
+    return;
+  }
+
+  setWheels(0, 0);
+  state = SEEK_LINE_FWD;
+  whiteSinceFollow = 0;
+  Serial.println(F("UTURN complete -> SEEK_LINE_FWD"));
+}
 
 void updateLastBlackDirState(const Sense& s) {
   if (s.anyBlack) {
@@ -189,15 +204,8 @@ void handleForwardEndpoint(const char* context) {
     Serial.print(context);
     Serial.println(" -> UTURN");
 
-    unsigned long start = millis();
-    while (millis() - start < UTURN_TIME_MS) {
-      setWheels(UTURN_SPEED, -UTURN_SPEED);
-      delay(5);
-    }
-
-    setWheels(0, 0);
-    state = SEEK_LINE_FWD;
-    Serial.println("UTURN complete -> SEEK_LINE_FWD");
+    uturnStart = millis();
+    state = UTURN;
   }
 }
 
@@ -288,6 +296,11 @@ void loop() {
                     finishReciprocalReturn,
                     "Back to start.",
                     runMode == RUNMODE_RECIP);
+      break;
+    }
+
+    case UTURN: {
+      handleUTurn();
       break;
     }
 
