@@ -9,13 +9,15 @@ extern RunMode runMode;
 extern const char* runModeLabel(RunMode mode);
 
 void applyPotRunMode() {
-  if (RUNMODE_POT_PIN < 0) return;
+  if (!RUNMODE_POT_ENABLED) return;
 
-  pinMode(RUNMODE_POT_PIN, INPUT);
+  const int potPin = RUNMODE_POT_PIN;
+
+  pinMode(potPin, INPUT);
 
   long total = 0;
   for (int i = 0; i < RUNMODE_POT_SAMPLES; ++i) {
-    total += analogRead(RUNMODE_POT_PIN);
+    total += analogRead(potPin);
   }
 
   int average = total / RUNMODE_POT_SAMPLES;
@@ -35,7 +37,7 @@ void applyPotRunMode() {
   runMode = selected;
 
   Serial.print("Pot run mode selection (pin ");
-  Serial.print(RUNMODE_POT_PIN);
+  Serial.print(potPin);
   Serial.print(", avg=");
   Serial.print(average);
   Serial.print("): ");
