@@ -55,6 +55,13 @@ unsigned long allWhiteSince = 0; // 全白が続いている開始時刻（端�
 bool lastAllWhite = false;
 
 unsigned long whiteSinceFollow = 0;  // FOLLOW中の「全白開始時刻」（見失い判定用）
+int lastBlackDirState = 0;           // -1=左, +1=右, 0=中央/不明
+
+void updateLastBlackDirState(const Sense& s) {
+  if (s.anyBlack) {
+    lastBlackDirState = getBlackDirState(s);
+  }
+}
 // ------------------ 端点（全白）検出のデバウンス ------------------
 bool endpointSeen(bool allWhiteNow) {
   unsigned long t = millis();
@@ -109,7 +116,7 @@ bool recoverLine(const Sense& s, int basePwm, int travelDir) {
   int dirSign = (travelDir >= 0) ? 1 : -1;
 
   int steerOffset;
-  int lastDir = getLastBlackDir();
+  int lastDir = lastBlackDirState;
   if (lastDir > 0) {
     steerOffset = REC_STEER;
   } else if (lastDir < 0) {
@@ -185,6 +192,7 @@ void setup() {
 
 void loop() {
   Sense s = readSensors();
+  updateLastBlackDirState(s);
   Serial.println(state);
   // setWheels(128,0);
 

@@ -15,6 +15,7 @@ struct Sense {
 };
 
 Sense readSensors();
+int getBlackDirState(const Sense& s);
 float computeError(int rawL, int rawC, int rawR);
-int getLastBlackDir();
+void updateLastBlackDirState(const Sense& s);
 
