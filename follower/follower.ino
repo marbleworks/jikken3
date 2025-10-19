@@ -23,18 +23,22 @@ const unsigned long LOST_TIMEOUT_MS   = 1500;
 WheelControl wheelController({PIN_LEFT_IN1, PIN_LEFT_IN2, PIN_LEFT_PWM,
                               PIN_RIGHT_IN1, PIN_RIGHT_IN2, PIN_RIGHT_PWM,
                               MIN_PWM, MAX_PWM, DEAD_PWM});
-DistanceSensor distanceSensor(PIN_TRIG, PIN_ECHO, MAX_DISTANCE_CM);
+DistanceSensor leftDistanceSensor(PIN_TRIG_LEFT, PIN_ECHO_LEFT, MAX_DISTANCE_CM);
+DistanceSensor rightDistanceSensor(PIN_TRIG_RIGHT, PIN_ECHO_RIGHT, MAX_DISTANCE_CM);
 ObstacleSensor obstacleSensor(PIN_IR_OBST, true);
 
 // ------------------ 状態変数 ------------------
-unsigned long lastPingTime = 0;
-float        lastDistance  = TARGET_DISTANCE_CM;
-float        lastError     = 0.0f;
-unsigned long lastSeenTime = 0;
+unsigned long lastPingTime     = 0;
+float        lastDistance      = TARGET_DISTANCE_CM;
+float        lastLeftDistance  = TARGET_DISTANCE_CM;
+float        lastRightDistance = TARGET_DISTANCE_CM;
+float        lastError         = 0.0f;
+unsigned long lastSeenTime     = 0;
 
 void setup()
 {
-  distanceSensor.begin();
+  leftDistanceSensor.begin();
+  rightDistanceSensor.begin();
   obstacleSensor.begin();
   wheelController.begin();
 
@@ -56,13 +60,38 @@ void loop()
 
   if (now - lastPingTime >= SONAR_INTERVAL_MS)
   {
-    float distance = distanceSensor.readDistanceCm();
+    float leftDistance = leftDistanceSensor.readDistanceCm();
+    delayMicroseconds(200);
+    float rightDistance = rightDistanceSensor.readDistanceCm();
     lastPingTime = now;
 
-    if (!isnan(distance))
+    bool leftValid = !isnan(leftDistance);
+    bool rightValid = !isnan(rightDistance);
+
+    if (leftValid)
+    {
+      lastLeftDistance = leftDistance;
+    }
+    if (rightValid)
+    {
+      lastRightDistance = rightDistance;
+    }
+
+    if (leftValid || rightValid)
     {
       lastSeenTime = now;
-      lastDistance = distance;
+      if (leftValid && rightValid)
+      {
+        lastDistance = (lastLeftDistance + lastRightDistance) / 2.0f;
+      }
+      else if (leftValid)
+      {
+        lastDistance = lastLeftDistance;
+      }
+      else
+      {
+        lastDistance = lastRightDistance;
+      }
     }
   }
 
@@ -91,7 +120,11 @@ void loop()
 
   if (now % 500 < 20)
   {
-    Serial.print(F("distance="));
+    Serial.print(F("left="));
+    Serial.print(lastLeftDistance);
+    Serial.print(F("cm, right="));
+    Serial.print(lastRightDistance);
+    Serial.print(F("cm, target="));
     Serial.print(lastDistance);
     Serial.print(F("cm, pwm="));
     Serial.println(pwm);
