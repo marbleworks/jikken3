@@ -18,6 +18,8 @@ const uint8_t MIN_PWM = 0;
 const uint8_t MAX_PWM = 200;
 const uint8_t DEAD_PWM = 30;
 
+const size_t DISTANCE_AVG_WINDOW = 5;
+
 const unsigned long SONAR_INTERVAL_MS = 60;
 const unsigned long LOST_TIMEOUT_MS   = 1500;
 
@@ -29,6 +31,41 @@ DistanceSensor leftDistanceSensor(PIN_TRIG_LEFT, PIN_ECHO_LEFT, MAX_DISTANCE_CM)
 DistanceSensor rightDistanceSensor(PIN_TRIG_RIGHT, PIN_ECHO_RIGHT, MAX_DISTANCE_CM);
 ObstacleSensor obstacleSensor(PIN_IR_OBST, true);
 
+struct MovingAverage
+{
+  float  buffer[DISTANCE_AVG_WINDOW];
+  size_t index;
+  size_t count;
+  float  sum;
+
+  MovingAverage() : index(0), count(0), sum(0.0f)
+  {
+    for (size_t i = 0; i < DISTANCE_AVG_WINDOW; ++i)
+    {
+      buffer[i] = 0.0f;
+    }
+  }
+
+  float add(float value)
+  {
+    if (count < DISTANCE_AVG_WINDOW)
+    {
+      buffer[index] = value;
+      sum += value;
+      ++count;
+      index = (index + 1) % DISTANCE_AVG_WINDOW;
+    }
+    else
+    {
+      sum -= buffer[index];
+      buffer[index] = value;
+      sum += value;
+      index = (index + 1) % DISTANCE_AVG_WINDOW;
+    }
+    return sum / count;
+  }
+};
+
 // ------------------ 状態変数 ------------------
 unsigned long lastPingTime     = 0;
 float        lastDistance      = TARGET_DISTANCE_CM;
@@ -37,6 +74,9 @@ float        lastRightDistance = TARGET_DISTANCE_CM;
 float        lastError         = 0.0f;
 float        lastTurnError     = 0.0f;
 unsigned long lastSeenTime     = 0;
+
+MovingAverage leftDistanceFilter;
+MovingAverage rightDistanceFilter;
 
 void setup()
 {
@@ -73,11 +113,11 @@ void loop()
 
     if (leftValid)
     {
-      lastLeftDistance = leftDistance;
+      lastLeftDistance = leftDistanceFilter.add(leftDistance);
     }
     if (rightValid)
     {
-      lastRightDistance = rightDistance;
+      lastRightDistance = rightDistanceFilter.add(rightDistance);
     }
 
     if (leftValid || rightValid)
