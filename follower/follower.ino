@@ -3,20 +3,7 @@
 #include "distance_sensor.h"
 #include "obstacle_sensor.h"
 #include "wheel_control.h"
-
-// ------------------ ピン設定 ------------------
-const uint8_t PIN_TRIG = 8;
-const uint8_t PIN_ECHO = 9;
-
-const uint8_t PIN_IR_OBST = 7;
-
-const uint8_t PIN_LEFT_IN1  = 2;
-const uint8_t PIN_LEFT_IN2  = 3;
-const uint8_t PIN_LEFT_PWM  = 5;
-
-const uint8_t PIN_RIGHT_IN1 = 4;
-const uint8_t PIN_RIGHT_IN2 = 12;
-const uint8_t PIN_RIGHT_PWM = 6;
+#include "pins.h"
 
 // ------------------ 制御パラメータ ------------------
 const float TARGET_DISTANCE_CM = 25.0f;
