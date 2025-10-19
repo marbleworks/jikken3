@@ -6,7 +6,7 @@
 #include "pins.h"
 
 // ------------------ 制御パラメータ ------------------
-const float TARGET_DISTANCE_CM = 25.0f;
+const float TARGET_DISTANCE_CM = 15.0f;
 const float KP = 6.0f;
 const float KD = 2.5f;
 const float TURN_KP = 4.0f;
