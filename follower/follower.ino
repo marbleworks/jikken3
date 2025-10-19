@@ -33,6 +33,8 @@ float        lastDistance      = TARGET_DISTANCE_CM;
 float        lastLeftDistance  = TARGET_DISTANCE_CM;
 float        lastRightDistance = TARGET_DISTANCE_CM;
 float        lastError         = 0.0f;
+float        lastLeftError     = 0.0f;
+float        lastRightError    = 0.0f;
 unsigned long lastSeenTime     = 0;
 
 void setup()
@@ -103,20 +105,35 @@ void loop()
     return;
   }
 
-  float error = TARGET_DISTANCE_CM - lastDistance;
-  float derivative = (error - lastError) / (SONAR_INTERVAL_MS / 1000.0f);
-  lastError = error;
+  float intervalSeconds = SONAR_INTERVAL_MS / 1000.0f;
+  float error           = TARGET_DISTANCE_CM - lastDistance;
+  float derivative      = (error - lastError) / intervalSeconds;
+  lastError             = error;
 
-  float control = KP * error + KD * derivative;
-  int pwm = (int)round(control);
-  pwm = constrain(pwm, -MAX_PWM, MAX_PWM);
+  float leftError       = TARGET_DISTANCE_CM - lastLeftDistance;
+  float leftDerivative  = (leftError - lastLeftError) / intervalSeconds;
+  lastLeftError         = leftError;
+
+  float rightError      = TARGET_DISTANCE_CM - lastRightDistance;
+  float rightDerivative = (rightError - lastRightError) / intervalSeconds;
+  lastRightError        = rightError;
+
+  float leftControl  = KP * leftError + KD * leftDerivative;
+  float rightControl = KP * rightError + KD * rightDerivative;
+
+  int leftPwm  = (int)round(leftControl);
+  int rightPwm = (int)round(rightControl);
+
+  leftPwm  = constrain(leftPwm, -MAX_PWM, MAX_PWM);
+  rightPwm = constrain(rightPwm, -MAX_PWM, MAX_PWM);
 
   if (lastDistance <= MIN_DISTANCE_CM)
   {
-    pwm = -MAX_PWM;
+    leftPwm  = -MAX_PWM;
+    rightPwm = -MAX_PWM;
   }
 
-  wheelController.drive(pwm, pwm);
+  wheelController.drive(leftPwm, rightPwm);
 
   if (now % 500 < 20)
   {
@@ -126,7 +143,9 @@ void loop()
     Serial.print(lastRightDistance);
     Serial.print(F("cm, target="));
     Serial.print(lastDistance);
-    Serial.print(F("cm, pwm="));
-    Serial.println(pwm);
+    Serial.print(F("cm, leftPwm="));
+    Serial.print(leftPwm);
+    Serial.print(F(", rightPwm="));
+    Serial.println(rightPwm);
   }
 }
