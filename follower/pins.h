@@ -2,8 +2,11 @@
 
 #include <Arduino.h>
 
-constexpr uint8_t PIN_TRIG       = 8;
-constexpr uint8_t PIN_ECHO       = 9;
+constexpr uint8_t PIN_TRIG_LEFT  = 8;
+constexpr uint8_t PIN_ECHO_LEFT  = 9;
+
+constexpr uint8_t PIN_TRIG_RIGHT = 10;
+constexpr uint8_t PIN_ECHO_RIGHT = 11;
 
 constexpr uint8_t PIN_IR_OBST    = 7;
 
