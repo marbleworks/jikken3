@@ -9,6 +9,8 @@
 const float TARGET_DISTANCE_CM = 25.0f;
 const float KP = 6.0f;
 const float KD = 2.5f;
+const float TURN_KP = 4.0f;
+const float TURN_KD = 1.2f;
 const float MAX_DISTANCE_CM = 200.0f;
 const float MIN_DISTANCE_CM = 5.0f;
 
@@ -33,8 +35,7 @@ float        lastDistance      = TARGET_DISTANCE_CM;
 float        lastLeftDistance  = TARGET_DISTANCE_CM;
 float        lastRightDistance = TARGET_DISTANCE_CM;
 float        lastError         = 0.0f;
-float        lastLeftError     = 0.0f;
-float        lastRightError    = 0.0f;
+float        lastTurnError     = 0.0f;
 unsigned long lastSeenTime     = 0;
 
 void setup()
@@ -110,19 +111,17 @@ void loop()
   float derivative      = (error - lastError) / intervalSeconds;
   lastError             = error;
 
-  float leftError       = TARGET_DISTANCE_CM - lastLeftDistance;
-  float leftDerivative  = (leftError - lastLeftError) / intervalSeconds;
-  lastLeftError         = leftError;
+  float turnError       = lastRightDistance - lastLeftDistance;
+  float turnDerivative  = (turnError - lastTurnError) / intervalSeconds;
+  lastTurnError         = turnError;
 
-  float rightError      = TARGET_DISTANCE_CM - lastRightDistance;
-  float rightDerivative = (rightError - lastRightError) / intervalSeconds;
-  lastRightError        = rightError;
+  float forwardControl = KP * error + KD * derivative;
+  float turnControl    = TURN_KP * turnError + TURN_KD * turnDerivative;
 
-  float leftControl  = KP * leftError + KD * leftDerivative;
-  float rightControl = KP * rightError + KD * rightDerivative;
-
-  int leftPwm  = (int)round(leftControl);
-  int rightPwm = (int)round(rightControl);
+  int basePwm  = (int)round(forwardControl);
+  int turnPwm  = (int)round(turnControl);
+  int leftPwm  = basePwm - turnPwm;
+  int rightPwm = basePwm + turnPwm;
 
   leftPwm  = constrain(leftPwm, -MAX_PWM, MAX_PWM);
   rightPwm = constrain(rightPwm, -MAX_PWM, MAX_PWM);
