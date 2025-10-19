@@ -107,7 +107,8 @@ void loop()
   }
 
   float intervalSeconds = SONAR_INTERVAL_MS / 1000.0f;
-  float error           = TARGET_DISTANCE_CM - lastDistance;
+  // 正の誤差 -> 目標より離れているため前進、負の誤差 -> 目標より近いので後退
+  float error           = lastDistance - TARGET_DISTANCE_CM;
   float derivative      = (error - lastError) / intervalSeconds;
   lastError             = error;
 
@@ -141,7 +142,9 @@ void loop()
     Serial.print(F("cm, right="));
     Serial.print(lastRightDistance);
     Serial.print(F("cm, target="));
-    Serial.print(lastDistance);
+    Serial.print(TARGET_DISTANCE_CM);
+    Serial.print(F("cm, error="));
+    Serial.print(lastError);
     Serial.print(F("cm, leftPwm="));
     Serial.print(leftPwm);
     Serial.print(F(", rightPwm="));
