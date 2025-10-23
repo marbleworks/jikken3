@@ -1,0 +1,193 @@
+#include <Arduino.h>
+
+#include "distance_sensor.h"
+#include "obstacle_sensor.h"
+#include "wheel_control.h"
+#include "pins.h"
+
+// ------------------ 制御パラメータ ------------------
+const float TARGET_DISTANCE_CM = 15.0f;
+const float KP = 6.0f;
+const float KD = 2.5f;
+const float TURN_KP = 4.0f;
+const float TURN_KD = 1.2f;
+const float MAX_DISTANCE_CM = 200.0f;
+const float MIN_DISTANCE_CM = 5.0f;
+
+const uint8_t MIN_PWM = 0;
+const uint8_t MAX_PWM = 200;
+const uint8_t DEAD_PWM = 30;
+
+const size_t DISTANCE_AVG_WINDOW = 5;
+
+const unsigned long SONAR_INTERVAL_MS = 60;
+const unsigned long LOST_TIMEOUT_MS   = 1500;
+
+// ------------------ モジュール初期化 ------------------
+WheelControl wheelController({PIN_LEFT_IN1, PIN_LEFT_IN2, PIN_LEFT_PWM,
+                              PIN_RIGHT_IN1, PIN_RIGHT_IN2, PIN_RIGHT_PWM,
+                              MIN_PWM, MAX_PWM, DEAD_PWM});
+DistanceSensor leftDistanceSensor(PIN_TRIG_LEFT, PIN_ECHO_LEFT, MAX_DISTANCE_CM);
+DistanceSensor rightDistanceSensor(PIN_TRIG_RIGHT, PIN_ECHO_RIGHT, MAX_DISTANCE_CM);
+ObstacleSensor obstacleSensor(PIN_IR_OBST, true);
+
+struct MovingAverage
+{
+  float  buffer[DISTANCE_AVG_WINDOW];
+  size_t index;
+  size_t count;
+  float  sum;
+
+  MovingAverage() : index(0), count(0), sum(0.0f)
+  {
+    for (size_t i = 0; i < DISTANCE_AVG_WINDOW; ++i)
+    {
+      buffer[i] = 0.0f;
+    }
+  }
+
+  float add(float value)
+  {
+    if (count < DISTANCE_AVG_WINDOW)
+    {
+      buffer[index] = value;
+      sum += value;
+      ++count;
+      index = (index + 1) % DISTANCE_AVG_WINDOW;
+    }
+    else
+    {
+      sum -= buffer[index];
+      buffer[index] = value;
+      sum += value;
+      index = (index + 1) % DISTANCE_AVG_WINDOW;
+    }
+    return sum / count;
+  }
+};
+
+// ------------------ 状態変数 ------------------
+unsigned long lastPingTime     = 0;
+float        lastDistance      = TARGET_DISTANCE_CM;
+float        lastLeftDistance  = TARGET_DISTANCE_CM;
+float        lastRightDistance = TARGET_DISTANCE_CM;
+float        lastError         = 0.0f;
+float        lastTurnError     = 0.0f;
+unsigned long lastSeenTime     = 0;
+
+MovingAverage leftDistanceFilter;
+MovingAverage rightDistanceFilter;
+
+void setup()
+{
+  leftDistanceSensor.begin();
+  rightDistanceSensor.begin();
+  obstacleSensor.begin();
+  wheelController.begin();
+
+  Serial.begin(115200);
+  Serial.println(F("Follower ready"));
+}
+
+void loop()
+{
+  unsigned long now = millis();
+
+  if (obstacleSensor.detected())
+  {
+    wheelController.stop();
+    Serial.println(F("Obstacle detected by IR sensor - stopping"));
+    delay(50);
+    return;
+  }
+
+  if (now - lastPingTime >= SONAR_INTERVAL_MS)
+  {
+    float leftDistance = leftDistanceSensor.readDistanceCm();
+    delayMicroseconds(200);
+    float rightDistance = rightDistanceSensor.readDistanceCm();
+    lastPingTime = now;
+
+    bool leftValid = !isnan(leftDistance);
+    bool rightValid = !isnan(rightDistance);
+
+    if (leftValid)
+    {
+      lastLeftDistance = leftDistanceFilter.add(leftDistance);
+    }
+    if (rightValid)
+    {
+      lastRightDistance = rightDistanceFilter.add(rightDistance);
+    }
+
+    if (leftValid || rightValid)
+    {
+      lastSeenTime = now;
+      if (leftValid && rightValid)
+      {
+        lastDistance = (lastLeftDistance + lastRightDistance) / 2.0f;
+      }
+      else if (leftValid)
+      {
+        lastDistance = lastLeftDistance;
+      }
+      else
+      {
+        lastDistance = lastRightDistance;
+      }
+    }
+  }
+
+  if (now - lastSeenTime > LOST_TIMEOUT_MS)
+  {
+    wheelController.stop();
+    Serial.println(F("Target lost - waiting"));
+    delay(50);
+    return;
+  }
+
+  float intervalSeconds = SONAR_INTERVAL_MS / 1000.0f;
+  // 正の誤差 -> 目標より離れているため前進、負の誤差 -> 目標より近いので後退
+  float error           = lastDistance - TARGET_DISTANCE_CM;
+  float derivative      = (error - lastError) / intervalSeconds;
+  lastError             = error;
+
+  float turnError       = lastRightDistance - lastLeftDistance;
+  float turnDerivative  = (turnError - lastTurnError) / intervalSeconds;
+  lastTurnError         = turnError;
+
+  float forwardControl = KP * error + KD * derivative;
+  float turnControl    = TURN_KP * turnError + TURN_KD * turnDerivative;
+
+  int basePwm  = (int)round(forwardControl);
+  int turnPwm  = (int)round(turnControl);
+  int leftPwm  = basePwm - turnPwm;
+  int rightPwm = basePwm + turnPwm;
+
+  leftPwm  = constrain(leftPwm, -MAX_PWM, MAX_PWM);
+  rightPwm = constrain(rightPwm, -MAX_PWM, MAX_PWM);
+
+  if (lastDistance <= MIN_DISTANCE_CM)
+  {
+    leftPwm  = -MAX_PWM;
+    rightPwm = -MAX_PWM;
+  }
+
+  wheelController.drive(leftPwm, rightPwm);
+
+  if (now % 500 < 20)
+  {
+    Serial.print(F("left="));
+    Serial.print(lastLeftDistance);
+    Serial.print(F("cm, right="));
+    Serial.print(lastRightDistance);
+    Serial.print(F("cm, target="));
+    Serial.print(TARGET_DISTANCE_CM);
+    Serial.print(F("cm, error="));
+    Serial.print(lastError);
+    Serial.print(F("cm, leftPwm="));
+    Serial.print(leftPwm);
+    Serial.print(F(", rightPwm="));
+    Serial.println(rightPwm);
+  }
+}
