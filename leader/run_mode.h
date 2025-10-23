@@ -14,3 +14,5 @@ const char* runModeLabel(RunMode mode);
 
 void applyPotRunMode();
 
+void applyRunModeTuning(RunMode mode);
+

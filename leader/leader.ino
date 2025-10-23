@@ -6,21 +6,137 @@
 #include "run_mode.h"
 
 // ------------------ チューニング用パラメータ ------------------
-int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
-int   HYST           = 40;    // ヒステリシス
-int   BASE_FWD       = 160;   // 前進の基準PWM
-int   BASE_BACK      = 150;   // 後退の基準PWM
-float KP_FWD         = 1;  // 前進Pゲイン
-float KP_BACK        = 1;  // 後退Pゲイン
-int   MAX_PWM        = 96;   // PWM上限
-int   MIN_PWM        = 0;     // PWM下限
-int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
-unsigned long END_WHITE_MS = 800; // 端点判定（全白がこの時間以上続く）
-unsigned long LOST_MS      = 300; // 見失い判定（FOLLOW中に全白がこの時間続いたらリカバリ）
-int   REC_STEER      = 128;    // リカバリ時の曲げ量（左右差）
-int   UTURN_SPEED    = 150;   // 片輪前進・片輪後退のPWM
-unsigned long UTURN_TIME_MS = 3000; // 180度回頭に掛ける時間（要調整）
+struct TuningParams {
+  int threshold;
+  int hyst;
+  int baseFwd;
+  int baseBack;
+  float kpFwd;
+  float kpBack;
+  int maxPwm;
+  int minPwm;
+  int seekSpeed;
+  unsigned long endWhiteMs;
+  unsigned long lostMs;
+  int recSteer;
+  int uturnSpeed;
+  unsigned long uturnTimeMs;
+};
+
+constexpr TuningParams TUNING_RECIP{
+  500,   // threshold: 白40 / 黒1000想定の中間。環境で調整
+  40,    // hyst
+  160,   // baseFwd
+  150,   // baseBack
+  1.0f,  // kpFwd
+  1.0f,  // kpBack
+  96,    // maxPwm
+  0,     // minPwm
+  120,   // seekSpeed
+  800,   // endWhiteMs
+  300,   // lostMs
+  128,   // recSteer
+  150,   // uturnSpeed
+  3000   // uturnTimeMs
+};
+
+constexpr TuningParams TUNING_UTURN{
+  500,
+  40,
+  160,
+  150,
+  1.0f,
+  1.0f,
+  96,
+  0,
+  120,
+  800,
+  300,
+  128,
+  150,
+  3000
+};
+
+constexpr TuningParams TUNING_LOOP{
+  500,
+  40,
+  160,
+  150,
+  1.0f,
+  1.0f,
+  96,
+  0,
+  120,
+  800,
+  300,
+  128,
+  150,
+  3000
+};
+
+constexpr TuningParams DEFAULT_TUNING =
+    (COMPILE_TIME_RUNMODE == RUNMODE_RECIP)
+        ? TUNING_RECIP
+        : ((COMPILE_TIME_RUNMODE == RUNMODE_UTURN) ? TUNING_UTURN
+                                                   : TUNING_LOOP);
+
+TuningParams currentTuning = DEFAULT_TUNING;
+
+int   THRESHOLD      = currentTuning.threshold;
+int   HYST           = currentTuning.hyst;
+int   BASE_FWD       = currentTuning.baseFwd;
+int   BASE_BACK      = currentTuning.baseBack;
+float KP_FWD         = currentTuning.kpFwd;
+float KP_BACK        = currentTuning.kpBack;
+int   MAX_PWM        = currentTuning.maxPwm;
+int   MIN_PWM        = currentTuning.minPwm;
+int   SEEK_SPEED     = currentTuning.seekSpeed;
+unsigned long END_WHITE_MS = currentTuning.endWhiteMs;
+unsigned long LOST_MS      = currentTuning.lostMs;
+int   REC_STEER      = currentTuning.recSteer;
+int   UTURN_SPEED    = currentTuning.uturnSpeed;
+unsigned long UTURN_TIME_MS = currentTuning.uturnTimeMs;
 // ----------------------------------------------------------------
+
+const TuningParams& tuningForMode(RunMode mode) {
+  switch (mode) {
+    case RUNMODE_RECIP: return TUNING_RECIP;
+    case RUNMODE_UTURN: return TUNING_UTURN;
+    case RUNMODE_LOOP:  return TUNING_LOOP;
+    default:            return TUNING_RECIP;
+  }
+}
+
+void applyRunModeTuning(RunMode mode) {
+  const TuningParams& params = tuningForMode(mode);
+  currentTuning = params;
+
+  THRESHOLD      = params.threshold;
+  HYST           = params.hyst;
+  BASE_FWD       = params.baseFwd;
+  BASE_BACK      = params.baseBack;
+  KP_FWD         = params.kpFwd;
+  KP_BACK        = params.kpBack;
+  MAX_PWM        = params.maxPwm;
+  MIN_PWM        = params.minPwm;
+  SEEK_SPEED     = params.seekSpeed;
+  END_WHITE_MS   = params.endWhiteMs;
+  LOST_MS        = params.lostMs;
+  REC_STEER      = params.recSteer;
+  UTURN_SPEED    = params.uturnSpeed;
+  UTURN_TIME_MS  = params.uturnTimeMs;
+
+  if (Serial) {
+    Serial.print(F("Applied tuning for mode "));
+    Serial.print(runModeLabel(mode));
+    Serial.print(F(": TH="));
+    Serial.print(THRESHOLD);
+    Serial.print(F(", BF="));
+    Serial.print(BASE_FWD);
+    Serial.print(F(", KPf="));
+    Serial.println(KP_FWD, 3);
+  }
+}
 
 // ====== struct をグローバルで定義 ======
 struct FollowResult {
@@ -208,6 +324,9 @@ void finishReciprocalReturn(const char* context) {
 void setup() {
   Serial.begin(115200);
   runMode = COMPILE_TIME_RUNMODE;
+  if (!RUNMODE_POT_ENABLED) {
+    applyRunModeTuning(runMode);
+  }
   applyPotRunMode();
   setupWheelPins();
   setupSensorLeds();

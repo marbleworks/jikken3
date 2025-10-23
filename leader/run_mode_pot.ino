@@ -33,6 +33,7 @@ void applyPotRunMode() {
   }
 
   runMode = selected;
+  applyRunModeTuning(runMode);
 
   Serial.print("Pot run mode selection (pin ");
   Serial.print(potPin);
