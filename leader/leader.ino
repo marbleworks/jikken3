@@ -5,6 +5,35 @@
 #include "timer.h"
 #include "run_mode.h"
 
+// ====== ライン追従状態管理 ======
+struct FollowResult {
+  bool lineLost;
+  bool endpoint;
+};
+
+enum State {
+  SEEK_LINE_FWD,     // 端点スタート（白）→黒ラインを探しながら前進
+  FOLLOW_FWD,        // 前進でライン追従
+  RECOVER_FWD,       // 前進中にライン見失い→自動復帰
+  SEEK_LINE_BACK,    // 折り返し（後退で黒ライン再捕捉）
+  FOLLOW_BACK,       // 後退でライン追従（復路）
+  RECOVER_BACK,      // 後退中に見失い→自動復帰
+  UTURN,             // Uターン中
+  DONE               // 完了（停止）
+};
+
+typedef void (*EndpointHandler)(const char* context);
+
+State state = SEEK_LINE_FWD;
+unsigned long lapCount = 0; // RUNMODE_LOOP で端点を通過した回数
+
+// 端点検出・見失い管理
+Timer endpointTimer;
+Timer lostTimer;
+int lastBlackDirState = 0; // -1=左, +1=右, 0=中央/不明
+Timer uturnTimer;
+// =================================================================
+
 // ------------------ チューニング用パラメータ ------------------
 struct TuningParams {
   int threshold;
@@ -137,35 +166,6 @@ void applyRunModeTuning(RunMode mode) {
     Serial.println(KP_FWD, 3);
   }
 }
-
-// ====== struct をグローバルで定義 ======
-struct FollowResult {
-  bool lineLost;
-  bool endpoint;
-};
-// =================================================================
-
-enum State {
-  SEEK_LINE_FWD,     // 端点スタート（白）→黒ラインを探しながら前進
-  FOLLOW_FWD,        // 前進でライン追従
-  RECOVER_FWD,       // 前進中にライン見失い→自動復帰
-  SEEK_LINE_BACK,    // 折り返し（後退で黒ライン再捕捉）
-  FOLLOW_BACK,       // 後退でライン追従（復路）
-  RECOVER_BACK,      // 後退中に見失い→自動復帰
-  UTURN,             // Uターン中
-  DONE               // 完了（停止）
-};
-State state = SEEK_LINE_FWD;
-
-unsigned long lapCount = 0; // RUNMODE_LOOP で端点を通過した回数
-
-// 端点検出・見失い管理
-Timer endpointTimer;
-Timer lostTimer;
-int lastBlackDirState = 0;           // -1=左, +1=右, 0=中央/不明
-Timer uturnTimer;
-
-typedef void (*EndpointHandler)(const char* context);
 
 void handleUTurn() {
   if (!uturnTimer.running()) {
