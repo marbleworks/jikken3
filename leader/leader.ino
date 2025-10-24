@@ -24,6 +24,7 @@ int   MAX_PWM        = 255;   // PWM上限
 int   MIN_PWM        = 0;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
 unsigned long LOST_MS      = 100; // 見失い判定（FOLLOW中に全白がこの時間続いたらリカバリ）
+unsigned int ENDPOINT_DONE_COUNT = 0; // 端点遭遇回数の上限 (0 で無効)
 int   REC_STEER      = 128;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED    = 150;   // 片輪前進・片輪後退のPWM
 unsigned long UTURN_TIME_MS = 3000; // 180度回頭に掛ける時間（要調整）
@@ -56,7 +57,7 @@ struct PIDState {
 PIDState pidForward{};
 PIDState pidBackward{};
 
-unsigned long lapCount = 0; // RUNMODE_LOOP で端点を通過した回数
+unsigned int endpointCount = 0;
 
 // 見失い管理
 Timer lostTimer;
@@ -205,38 +206,78 @@ void handleRecover(const Sense& s,
   }
 }
 
+bool endpointLimitReached(const char* context) {
+  ++endpointCount;
+  if (ENDPOINT_DONE_COUNT > 0 && endpointCount >= ENDPOINT_DONE_COUNT) {
+    Serial.print("Endpoint ");
+    Serial.print(context);
+    Serial.println(" -> DONE (limit reached)");
+    state = DONE;
+    uturnTimer.reset();
+    return true;
+  }
+  return false;
+}
+
 void handleForwardEndpoint(const char* context) {
   setWheels(0, 0);
   lostTimer.reset();
 
-  if (runMode == RUNMODE_RECIP) {
-    state = SEEK_LINE_BACK;
-    Serial.print("Endpoint ");
-    Serial.print(context);
-    Serial.println(" -> SEEK_LINE_BACK");
-  } else if (runMode == RUNMODE_LOOP) {
-    ++lapCount;
-    state = SEEK_LINE_FWD;
-    Serial.print("Endpoint ");
-    Serial.print(context);
-    Serial.print(" -> continuing loop (lap ");
-    Serial.print(lapCount);
-    Serial.println(")");
-  } else if (runMode == RUNMODE_UTURN) {
+  if (endpointLimitReached(context)) {
+    return;
+  }
+
+  if (runMode == RUNMODE_UTURN) {
     Serial.print("Endpoint ");
     Serial.print(context);
     Serial.println(" -> UTURN");
 
     uturnTimer.start();
     state = UTURN;
+  } else {
+    state = SEEK_LINE_BACK;
+    Serial.print("Endpoint ");
+    Serial.print(context);
+    Serial.println(" -> SEEK_LINE_BACK");
   }
 }
 
-void finishReciprocalReturn(const char* context) {
+void handleBackwardEndpoint(const char* context) {
   setWheels(0, 0);
+  lostTimer.reset();
+
+  if (endpointLimitReached(context)) {
+    return;
+  }
+
+  state = SEEK_LINE_FWD;
+  Serial.print("Endpoint ");
   Serial.print(context);
-  Serial.println(" DONE.");
-  state = DONE;
+  Serial.println(" -> SEEK_LINE_FWD");
+}
+
+void handleForwardLineLost(const char* context) {
+  if (runMode == RUNMODE_LOOP) {
+    state = RECOVER_FWD;
+    Serial.print("Line lost ");
+    Serial.print(context);
+    Serial.println(" -> RECOVER_FWD");
+    return;
+  }
+
+  handleForwardEndpoint(context);
+}
+
+void handleBackwardLineLost(const char* context) {
+  if (runMode == RUNMODE_LOOP) {
+    state = RECOVER_BACK;
+    Serial.print("Line lost ");
+    Serial.print(context);
+    Serial.println(" -> RECOVER_BACK");
+    return;
+  }
+
+  handleBackwardEndpoint(context);
 }
 
 // ------------------ setup / loop ------------------
@@ -268,18 +309,7 @@ void loop() {
     case FOLLOW_FWD: {
       FollowResult r = runLineTraceCommon(s, +1);
       if (r.lineLost) {
-        if (runMode == RUNMODE_LOOP) {
-          state = RECOVER_FWD;
-        } else if (runMode == RUNMODE_RECIP) {
-          setWheels(0, 0);
-          lostTimer.reset();
-          state = SEEK_LINE_BACK;
-          Serial.println(F("Line lost (forward) -> SEEK_LINE_BACK"));
-        } else if (runMode == RUNMODE_UTURN) {
-          handleForwardEndpoint("lost (forward)");
-        } else {
-          state = RECOVER_FWD;
-        }
+        handleForwardLineLost("forward");
         break;
       }
       break;
@@ -305,11 +335,7 @@ void loop() {
     case FOLLOW_BACK: {
       FollowResult r = runLineTraceCommon(s, -1);
       if (r.lineLost) {
-        if (runMode == RUNMODE_RECIP) {
-          finishReciprocalReturn("Back to start.");
-        } else {
-          state = RECOVER_BACK;
-        }
+        handleBackwardLineLost("backward");
         break;
       }
       break;
