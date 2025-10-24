@@ -8,14 +8,14 @@
 // ------------------ チューニング用パラメータ ------------------
 int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
 int   HYST           = 40;    // ヒステリシス
-int   BASE_FWD       = 160;   // 前進の基準PWM
-int   BASE_BACK      = 150;   // 後退の基準PWM
-float KP_FWD         = 1;  // 前進Pゲイン
-float KP_BACK        = 1;  // 後退Pゲイン
+int   BASE_FWD       = 100;   // 前進の基準PWM
+int   BASE_BACK      = 100;   // 後退の基準PWM
+float KP_FWD         = 0.2f;  // 前進Pゲイン
+float KP_BACK        = 0.2f;  // 後退Pゲイン
 float LINE_WHITE     = 40.0f;   // センサ白レベル
 float LINE_BLACK     = 900.0f;  // センサ黒レベル
 float LINE_EPS       = 1e-3f;   // 全白判定のしきい値
-int   MAX_PWM        = 96;   // PWM上限
+int   MAX_PWM        = 255;   // PWM上限
 int   MIN_PWM        = 0;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
 unsigned long END_WHITE_MS = 800; // 端点判定（全白がこの時間以上続く）
