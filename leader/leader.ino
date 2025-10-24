@@ -115,7 +115,7 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
     lostTimer.reset();
   }
 
-  float e = computeError(s.rawL, s.rawC, s.rawR, LINE_WHITE, LINE_BLACK, LINE_EPS);
+  float e = computeError(s.rawL, s.rawC, s.rawR);
   float kp = (travelDir > 0) ? KP_FWD : KP_BACK;
   int base = (travelDir > 0) ? BASE_FWD : BASE_BACK;
   int corr = (int)(kp * e * 255.0f);
