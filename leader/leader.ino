@@ -206,78 +206,69 @@ void handleRecover(const Sense& s,
   }
 }
 
-bool endpointLimitReached(const char* context) {
-  ++endpointCount;
-  if (ENDPOINT_DONE_COUNT > 0 && endpointCount >= ENDPOINT_DONE_COUNT) {
-    Serial.print("Endpoint ");
-    Serial.print(context);
-    Serial.println(" -> DONE (limit reached)");
-    state = DONE;
-    uturnTimer.reset();
-    return true;
-  }
-  return false;
+void handleEndpointLimitReached() {
+  Serial.println(F("Endpoint limit reached -> DONE"));
+  state = DONE;
+  uturnTimer.reset();
 }
 
-void handleForwardEndpoint(const char* context) {
+void onEndpointEncountered() {
+  ++endpointCount;
+  if (ENDPOINT_DONE_COUNT > 0 && endpointCount >= ENDPOINT_DONE_COUNT) {
+    handleEndpointLimitReached();
+  }
+}
+
+void handleForwardEndpoint() {
   setWheels(0, 0);
   lostTimer.reset();
 
-  if (endpointLimitReached(context)) {
+  onEndpointEncountered();
+  if (state == DONE) {
     return;
   }
 
   if (runMode == RUNMODE_UTURN) {
-    Serial.print("Endpoint ");
-    Serial.print(context);
-    Serial.println(" -> UTURN");
-
+    Serial.println(F("Endpoint (forward) -> UTURN"));
     uturnTimer.start();
     state = UTURN;
   } else {
     state = SEEK_LINE_BACK;
-    Serial.print("Endpoint ");
-    Serial.print(context);
-    Serial.println(" -> SEEK_LINE_BACK");
+    Serial.println(F("Endpoint (forward) -> SEEK_LINE_BACK"));
   }
 }
 
-void handleBackwardEndpoint(const char* context) {
+void handleBackwardEndpoint() {
   setWheels(0, 0);
   lostTimer.reset();
 
-  if (endpointLimitReached(context)) {
+  onEndpointEncountered();
+  if (state == DONE) {
     return;
   }
 
   state = SEEK_LINE_FWD;
-  Serial.print("Endpoint ");
-  Serial.print(context);
-  Serial.println(" -> SEEK_LINE_FWD");
+  Serial.println(F("Endpoint (backward) -> SEEK_LINE_FWD"));
 }
 
-void handleForwardLineLost(const char* context) {
+void handleForwardLineLost() {
   if (runMode == RUNMODE_LOOP) {
     state = RECOVER_FWD;
-    Serial.print("Line lost ");
-    Serial.print(context);
-    Serial.println(" -> RECOVER_FWD");
+    Serial.println(F("Line lost (forward) -> RECOVER_FWD"));
     return;
   }
 
-  handleForwardEndpoint(context);
+  handleForwardEndpoint();
 }
 
-void handleBackwardLineLost(const char* context) {
+void handleBackwardLineLost() {
   if (runMode == RUNMODE_LOOP) {
     state = RECOVER_BACK;
-    Serial.print("Line lost ");
-    Serial.print(context);
-    Serial.println(" -> RECOVER_BACK");
+    Serial.println(F("Line lost (backward) -> RECOVER_BACK"));
     return;
   }
 
-  handleBackwardEndpoint(context);
+  handleBackwardEndpoint();
 }
 
 // ------------------ setup / loop ------------------
@@ -309,7 +300,7 @@ void loop() {
     case FOLLOW_FWD: {
       FollowResult r = runLineTraceCommon(s, +1);
       if (r.lineLost) {
-        handleForwardLineLost("forward");
+        handleForwardLineLost();
         break;
       }
       break;
@@ -335,7 +326,7 @@ void loop() {
     case FOLLOW_BACK: {
       FollowResult r = runLineTraceCommon(s, -1);
       if (r.lineLost) {
-        handleBackwardLineLost("backward");
+        handleBackwardLineLost();
         break;
       }
       break;
