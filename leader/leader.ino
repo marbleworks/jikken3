@@ -12,6 +12,11 @@ int   BASE_FWD       = 100;   // 前進の基準PWM
 int   BASE_BACK      = 100;   // 後退の基準PWM
 float KP_FWD         = 0.2f;  // 前進Pゲイン
 float KP_BACK        = 0.2f;  // 後退Pゲイン
+float KI_FWD         = 0.0f;  // 前進Iゲイン
+float KI_BACK        = 0.0f;  // 後退Iゲイン
+float KD_FWD         = 0.0f;  // 前進Dゲイン
+float KD_BACK        = 0.0f;  // 後退Dゲイン
+float PID_I_LIMIT    = 1.0f;  // I項アンチワインドアップ上限
 float LINE_WHITE     = 40.0f;   // センサ白レベル
 float LINE_BLACK     = 900.0f;  // センサ黒レベル
 float LINE_EPS       = 1e-3f;   // 全白判定のしきい値
@@ -43,6 +48,15 @@ enum State {
   DONE               // 完了（停止）
 };
 State state = SEEK_LINE_FWD;
+
+struct PIDState {
+  float integral;
+  float lastError;
+  unsigned long lastTimeMs;
+};
+
+PIDState pidForward{};
+PIDState pidBackward{};
 
 unsigned long lapCount = 0; // RUNMODE_LOOP で端点を通過した回数
 
@@ -78,11 +92,34 @@ void updateLastBlackDirState(const Sense& s) {
   }
 }
 
+void resetPidState(PIDState& pid) {
+  pid.integral = 0.0f;
+  pid.lastError = 0.0f;
+  pid.lastTimeMs = 0;
+}
+
+void resetPidForState(State followState) {
+  if (followState == FOLLOW_FWD) {
+    resetPidState(pidForward);
+  } else if (followState == FOLLOW_BACK) {
+    resetPidState(pidBackward);
+  }
+}
+
+void resetPidForDir(int travelDir) {
+  if (travelDir >= 0) {
+    resetPidState(pidForward);
+  } else {
+    resetPidState(pidBackward);
+  }
+}
+
 void handleSeekLine(State followState, int speedSign, const __FlashStringHelper* logMsg, const Sense& s) {
   int speed = speedSign * SEEK_SPEED;
   setWheels(speed, speed);
   if (s.anyBlack) {
     state = followState;
+    resetPidForState(followState);
     lostTimer.reset();
     Serial.println(logMsg);
   }
@@ -109,6 +146,7 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
     }
     if (lostTimer.elapsed() > LOST_MS) {
       res.lineLost = true;
+      resetPidForDir(travelDir);
       return res;
     }
   } else {
@@ -116,9 +154,29 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   }
 
   float e = computeError(s.rawL, s.rawC, s.rawR);
+  PIDState& pid = (travelDir > 0) ? pidForward : pidBackward;
   float kp = (travelDir > 0) ? KP_FWD : KP_BACK;
+  float ki = (travelDir > 0) ? KI_FWD : KI_BACK;
+  float kd = (travelDir > 0) ? KD_FWD : KD_BACK;
   int base = (travelDir > 0) ? BASE_FWD : BASE_BACK;
-  int corr = (int)(kp * e * 255.0f);
+
+  unsigned long now = millis();
+  float dt = 0.0f;
+  if (pid.lastTimeMs != 0) {
+    dt = (now - pid.lastTimeMs) / 1000.0f;
+  }
+  pid.lastTimeMs = now;
+
+  float derivative = 0.0f;
+  if (!s.allWhite && dt > 0.0f) {
+    pid.integral += e * dt;
+    pid.integral = constrain(pid.integral, -PID_I_LIMIT, PID_I_LIMIT);
+    derivative = (e - pid.lastError) / dt;
+  }
+  pid.lastError = e;
+
+  float output = kp * e + ki * pid.integral + kd * derivative;
+  int corr = (int)(output * 255.0f);
 
   int dirSign    = (travelDir >= 0) ? 1 : -1;
 
@@ -164,6 +222,7 @@ void handleRecover(const Sense& s,
   if (recovered) {
     lostTimer.reset();
     state = followState;
+    resetPidForState(followState);
     Serial.println(logMsg);
   }
 
