@@ -292,7 +292,7 @@ void loop() {
     case SEEK_LINE_FWD: {
       bool found = handleSeekLine(FOLLOW_FWD, +1, s);
       if (found) {
-        Serial.println(F("-> FOLLOW_FWD"));
+        Serial.println(F("Line found (forward) -> FOLLOW_FWD"));
       }
       break;
     }
@@ -320,7 +320,7 @@ void loop() {
     case SEEK_LINE_BACK: {
       bool found = handleSeekLine(FOLLOW_BACK, -1, s);
       if (found) {
-        Serial.println(F("-> FOLLOW_BACK"));
+        Serial.println(F("Line found (backward) -> FOLLOW_BACK"));
       }
       break;
     }
