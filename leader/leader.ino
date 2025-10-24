@@ -11,11 +11,11 @@ int   HYST           = 40;    // ヒステリシス
 int   BASE_FWD       = 100;   // 前進の基準PWM
 int   BASE_BACK      = 100;   // 後退の基準PWM
 float KP_FWD         = 0.2f;  // 前進Pゲイン
-float KP_BACK        = 0.2f;  // 後退Pゲイン
-float KI_FWD         = 0.0f;  // 前進Iゲイン
-float KI_BACK        = 0.0f;  // 後退Iゲイン
-float KD_FWD         = 0.0f;  // 前進Dゲイン
-float KD_BACK        = 0.0f;  // 後退Dゲイン
+float KP_BACK        = 0.1f;  // 後退Pゲイン
+float KI_FWD         = 0.05f;  // 前進Iゲイン
+float KI_BACK        = 0.05f;  // 後退Iゲイン
+float KD_FWD         = 0.05f;  // 前進Dゲイン
+float KD_BACK        = 0.05f;  // 後退Dゲイン
 float PID_I_LIMIT    = 1.0f;  // I項アンチワインドアップ上限
 float LINE_WHITE     = 40.0f;   // センサ白レベル
 float LINE_BLACK     = 900.0f;  // センサ黒レベル
@@ -23,8 +23,8 @@ float LINE_EPS       = 1e-3f;   // 全白判定のしきい値
 int   MAX_PWM        = 255;   // PWM上限
 int   MIN_PWM        = 0;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
-unsigned long END_WHITE_MS = 800; // 端点判定（全白がこの時間以上続く）
-unsigned long LOST_MS      = 300; // 見失い判定（FOLLOW中に全白がこの時間続いたらリカバリ）
+unsigned long END_WHITE_MS = 0; // 端点判定（全白がこの時間以上続く）
+unsigned long LOST_MS      = 100; // 見失い判定（FOLLOW中に全白がこの時間続いたらリカバリ）
 int   REC_STEER      = 128;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED    = 150;   // 片輪前進・片輪後退のPWM
 unsigned long UTURN_TIME_MS = 3000; // 180度回頭に掛ける時間（要調整）
@@ -233,7 +233,6 @@ void handleRecover(const Sense& s,
 
 void handleForwardEndpoint(const char* context) {
   setWheels(0, 0);
-  delay(150);
   lostTimer.reset();
 
   if (runMode == RUNMODE_RECIP) {
@@ -272,6 +271,7 @@ void setup() {
   runMode = COMPILE_TIME_RUNMODE;
   applyPotRunMode();
   setupWheelPins();
+  pinMode(LED_WARN, OUTPUT);
   setupSensorLeds();
   Serial.print("Power-on (run mode: ");
   Serial.print(runModeLabel(runMode));
@@ -282,7 +282,6 @@ void loop() {
   Sense s = readSensors();
   updateLastBlackDirState(s);
   Serial.println(state);
-  // setWheels(128,0);
 
   switch (state) {
     // 端点(全白)から前進して黒ラインを掴む
