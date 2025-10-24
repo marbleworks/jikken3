@@ -12,6 +12,9 @@ int   BASE_FWD       = 160;   // 前進の基準PWM
 int   BASE_BACK      = 150;   // 後退の基準PWM
 float KP_FWD         = 1;  // 前進Pゲイン
 float KP_BACK        = 1;  // 後退Pゲイン
+float LINE_WHITE     = 40.0f;   // センサ白レベル
+float LINE_BLACK     = 900.0f;  // センサ黒レベル
+float LINE_EPS       = 1e-3f;   // 全白判定のしきい値
 int   MAX_PWM        = 96;   // PWM上限
 int   MIN_PWM        = 0;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
@@ -112,7 +115,7 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
     lostTimer.reset();
   }
 
-  float e = computeError(s.rawL, s.rawC, s.rawR);
+  float e = computeError(s.rawL, s.rawC, s.rawR, LINE_WHITE, LINE_BLACK, LINE_EPS);
   float kp = (travelDir > 0) ? KP_FWD : KP_BACK;
   int base = (travelDir > 0) ? BASE_FWD : BASE_BACK;
   int corr = (int)(kp * e * 255.0f);
