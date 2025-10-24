@@ -5,6 +5,9 @@
 
 extern int THRESHOLD;
 extern int HYST;
+extern float LINE_WHITE;
+extern float LINE_BLACK;
+extern float LINE_EPS;
 
 static bool applyHysteresis(int raw, bool lastState, int thH, int thL) {
   return lastState ? (raw > thL) : (raw > thH);
@@ -53,14 +56,26 @@ int getBlackDirState(const Sense& s) {
 }
 
 float computeError(int rawL, int rawC, int rawR) {
-  const float span = 1000.0f - 40.0f;
-  float weightL = max(0.0f, (float)(rawL - THRESHOLD)) / span;
-  float weightC = max(0.0f, (float)(rawC - THRESHOLD)) / span;
-  float weightR = max(0.0f, (float)(rawR - THRESHOLD)) / span;
-  float total = weightL + weightC + weightR;
-  if (total < 0.001f) {
-    return 0.0f;
+  static float lastErr = 0.0f;
+
+  auto norm = [&](int v) -> float {
+    float x = (v - LINE_WHITE) / (LINE_BLACK - LINE_WHITE);
+    if (x < 0.0f) x = 0.0f;
+    if (x > 1.0f) x = 1.0f;
+    return x;
+  };
+
+  float bL = norm(rawL);
+  float bC = norm(rawC);
+  float bR = norm(rawR);
+
+  float s = bL + bC + bR;
+  if (s < LINE_EPS) {
+    return lastErr;
   }
-  float position = (-1.0f * weightL + 1.0f * weightR) / total;
-  return position;
+
+  float err = (-1.0f * bL + 1.0f * bR) / s;
+
+  lastErr = err;
+  return err;
 }
