@@ -110,15 +110,16 @@ void resetPidForDir(int travelDir) {
   }
 }
 
-void handleSeekLine(State followState, int speedSign, const __FlashStringHelper* logMsg, const Sense& s) {
+bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   int speed = speedSign * SEEK_SPEED;
   setWheels(speed, speed);
   if (s.anyBlack) {
     state = followState;
     resetPidForState(followState);
     lostTimer.reset();
-    Serial.println(logMsg);
+    return true;
   }
+  return false;
 }
 FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   FollowResult res { false };
@@ -291,7 +292,10 @@ void loop() {
   switch (state) {
     // 端点(全白)から前進して黒ラインを掴む
     case SEEK_LINE_FWD: {
-      handleSeekLine(FOLLOW_FWD, +1, F("-> FOLLOW_FWD"), s);
+      bool found = handleSeekLine(FOLLOW_FWD, +1, s);
+      if (found) {
+        Serial.println(F("-> FOLLOW_FWD"));
+      }
       break;
     }
 
@@ -319,7 +323,10 @@ void loop() {
 
     // 折り返し：後退で黒ライン再捕捉
     case SEEK_LINE_BACK: {
-      handleSeekLine(FOLLOW_BACK, -1, F("-> FOLLOW_BACK"), s);
+      bool found = handleSeekLine(FOLLOW_BACK, -1, s);
+      if (found) {
+        Serial.println(F("-> FOLLOW_BACK"));
+      }
       break;
     }
 
