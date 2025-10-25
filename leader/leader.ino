@@ -191,7 +191,7 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
     return res;
   }
 
-  float e = computeError(s.rawL, s.rawC, s.rawR);
+  float e = computeError(s, position);
   float kp = (travelDir > 0) ? KP_FWD : KP_BACK;
   float ki = (travelDir > 0) ? KI_FWD : KI_BACK;
   float kd = (travelDir > 0) ? KD_FWD : KD_BACK;

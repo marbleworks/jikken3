@@ -151,9 +151,7 @@ bool getAllWhite(const Sense& s, SensorPosition position) {
   return false;
 }
 
-float computeError(int rawL, int rawC, int rawR) {
-  static float lastErr = 0.0f;
-
+float computeError(const Sense& s, SensorPosition position) {
   auto norm = [&](int v) -> float {
     float x = (v - LINE_WHITE) / (LINE_BLACK - LINE_WHITE);
     if (x < 0.0f) x = 0.0f;
@@ -161,19 +159,40 @@ float computeError(int rawL, int rawC, int rawR) {
     return x;
   };
 
-  float bL = norm(rawL);
-  float bC = norm(rawC);
-  float bR = norm(rawR);
+  static float lastFrontErr = 0.0f;
+  static float lastRearErr = 0.0f;
 
-  float s = bL + bC + bR;
-  if (s < LINE_EPS) {
-    return lastErr;
+  switch (position) {
+    case SensorPosition::Front: {
+      float bL = norm(s.rawL);
+      float bC = norm(s.rawC);
+      float bR = norm(s.rawR);
+
+      float sum = bL + bC + bR;
+      if (sum < LINE_EPS) {
+        return lastFrontErr;
+      }
+
+      float err = (-1.0f * bL + 1.0f * bR) / sum;
+      lastFrontErr = err;
+      return err;
+    }
+    case SensorPosition::Rear: {
+      float bL = norm(s.rawRL);
+      float bR = norm(s.rawRR);
+
+      float sum = bL + bR;
+      if (sum < LINE_EPS) {
+        return lastRearErr;
+      }
+
+      float err = (-1.0f * bL + 1.0f * bR) / sum;
+      lastRearErr = err;
+      return err;
+    }
   }
 
-  float err = (-1.0f * bL + 1.0f * bR) / s;
-
-  lastErr = err;
-  return err;
+  return 0.0f;
 }
 
 SensorPosition directionToSensorPosition(int direction) {
