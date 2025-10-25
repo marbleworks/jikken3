@@ -250,8 +250,6 @@ void recoverLine(const Sense& s, int basePwm, int travelDir) {
 }
 
 bool handleRecover(const Sense& s, State followState, int basePwm, int travelDir) {
-  // Check the sensor row aligned with the current travel direction when deciding
-  // whether the line has been reacquired.
   SensorPosition position = directionToSensorPosition(travelDir);
   bool recovered = getAnyBlack(s, position);
   if (recovered) {
