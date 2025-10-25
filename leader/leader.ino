@@ -23,7 +23,9 @@ float LINE_EPS       = 1e-3f;   // 全白判定のしきい値
 int   MAX_PWM        = 255;   // PWM上限
 int   MIN_PWM        = 0;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
-unsigned long LOST_MS      = 100; // 見失い判定（FOLLOW中に全白がこの時間続いたらリカバリ）
+unsigned long LOST_MS_RECIP      = 200; // Reciprocalモードの見失い判定時間
+unsigned long LOST_MS_UTURN      = 50; // UTurnモードの見失い判定時間
+unsigned long LOST_MS_LOOP       = 100; // Loopモードの見失い判定時間
 unsigned int ENDPOINT_DONE_COUNT = 2; // 端点遭遇回数の上限 (0 で無効)
 int   REC_STEER      = 128;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED_LEFT  = 90;   // Uターン時の左輪PWM（正で前進）
@@ -67,6 +69,15 @@ unsigned int endpointCount = 0;
 Timer lineLostTimer;
 Timer uturnTimer;
 Timer preDoneTimer;
+
+unsigned long getLostMsForMode(RunMode mode) {
+  switch (mode) {
+    case RUNMODE_RECIP: return LOST_MS_RECIP;
+    case RUNMODE_UTURN: return LOST_MS_UTURN;
+    case RUNMODE_LOOP:  return LOST_MS_LOOP;
+    default:            return LOST_MS_RECIP;
+  }
+}
 
 const __FlashStringHelper* stateLabel(State s) {
   switch (s) {
@@ -114,12 +125,12 @@ void changeState(State newState,
   }
 }
 
-bool handleLineLostTimer(bool allWhite) {
+bool handleLineLostTimer(bool allWhite, unsigned long lostMs) {
   if (allWhite) {
     if (!lineLostTimer.running()) {
       lineLostTimer.start();
     }
-    if (lineLostTimer.elapsed() > LOST_MS) {
+    if (lineLostTimer.elapsed() > lostMs) {
       lineLostTimer.reset();
       return true;
     }
@@ -185,7 +196,7 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   SensorPosition position = directionToSensorPosition(travelDir);
   bool allWhite = getAllWhite(s, position);
 
-  if (handleLineLostTimer(allWhite)) {
+  if (handleLineLostTimer(allWhite, getLostMsForMode(runMode))) {
     res.lineLost = true;
     resetPidState(pid);
     return res;
