@@ -41,9 +41,17 @@ Sense readSensors() {
   lastRLBlack = s.isBlackRL;
   lastRRBlack = s.isBlackRR;
 
-  s.anyBlack = s.isBlackL || s.isBlackC || s.isBlackR || s.isBlackRL || s.isBlackRR;
-  s.allBlack = s.isBlackL && s.isBlackC && s.isBlackR && s.isBlackRL && s.isBlackRR;
-  s.allWhite = !s.anyBlack;
+  s.anyBlackFront = s.isBlackL || s.isBlackC || s.isBlackR;
+  s.allBlackFront = s.isBlackL && s.isBlackC && s.isBlackR;
+  s.allWhiteFront = !s.anyBlackFront;
+
+  s.anyBlackRear = s.isBlackRL || s.isBlackRR;
+  s.allBlackRear = s.isBlackRL && s.isBlackRR;
+  s.allWhiteRear = !s.anyBlackRear;
+
+  s.anyBlack = s.anyBlackFront || s.anyBlackRear;
+  s.allBlack = s.allBlackFront && s.allBlackRear;
+  s.allWhite = s.allWhiteFront && s.allWhiteRear;
 
   displaySensorStates(s.isBlackL,
                       s.isBlackC,
@@ -55,16 +63,26 @@ Sense readSensors() {
 }
 
 int getBlackDirState(const Sense& s) {
-  int leftCount = (s.isBlackL ? 1 : 0) + (s.isBlackRL ? 1 : 0);
-  int rightCount = (s.isBlackR ? 1 : 0) + (s.isBlackRR ? 1 : 0);
-
-  if (leftCount > rightCount) {
+  if (s.isBlackL && !s.isBlackR) {
     return -1;
   }
-  if (rightCount > leftCount) {
+  if (s.isBlackR && !s.isBlackL) {
     return +1;
   }
-  if (s.isBlackC || s.allBlack) {
+  if (s.isBlackC || s.allBlackFront) {
+    return 0;
+  }
+  return 0;
+}
+
+int getRearBlackDirState(const Sense& s) {
+  if (s.isBlackRL && !s.isBlackRR) {
+    return -1;
+  }
+  if (s.isBlackRR && !s.isBlackRL) {
+    return +1;
+  }
+  if (s.allBlackRear) {
     return 0;
   }
   return 0;

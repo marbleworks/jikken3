@@ -167,8 +167,10 @@ void handleUTurn() {
 }
 
 void updateLastBlackDirState(const Sense& s) {
-  if (s.anyBlack) {
+  if (s.anyBlackFront) {
     lastBlackDirState = getBlackDirState(s);
+  } else if (s.anyBlackRear) {
+    lastBlackDirState = getRearBlackDirState(s);
   }
 }
 
