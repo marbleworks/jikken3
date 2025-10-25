@@ -29,7 +29,7 @@ int   REC_STEER      = 128;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED_LEFT  = 90;   // Uターン時の左輪PWM（正で前進）
 int   UTURN_SPEED_RIGHT = -130;  // Uターン時の右輪PWM（正で前進）
 unsigned long UTURN_TIME_MS = 900; // 180度回頭に掛ける時間（要調整）
-unsigned long PRE_DONE_DURATION_MS = 200; // PRE_DONE時間（DONEの前に前進or後退）
+unsigned long PRE_DONE_DURATION_MS = 50; // PRE_DONE時間（DONEの前に前進or後退）
 // ----------------------------------------------------------------
 
 // ====== struct をグローバルで定義 ======
