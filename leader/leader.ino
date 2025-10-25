@@ -8,14 +8,14 @@
 // ------------------ チューニング用パラメータ ------------------
 int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
 int   HYST           = 40;    // ヒステリシス
-int   BASE_FWD       = 100;   // 前進の基準PWM
-int   BASE_BACK      = 100;   // 後退の基準PWM
+int   BASE_FWD       = 120;   // 前進の基準PWM
+int   BASE_BACK      = 120;   // 後退の基準PWM
 float KP_FWD         = 0.2f;  // 前進Pゲイン
-float KP_BACK        = 0.1f;  // 後退Pゲイン
+float KP_BACK        = 0.05f;  // 後退Pゲイン
 float KI_FWD         = 0.05f;  // 前進Iゲイン
-float KI_BACK        = 0.05f;  // 後退Iゲイン
+float KI_BACK        = 0.0125f;  // 後退Iゲイン
 float KD_FWD         = 0.05f;  // 前進Dゲイン
-float KD_BACK        = 0.05f;  // 後退Dゲイン
+float KD_BACK        = 0.0125f;  // 後退Dゲイン
 float PID_I_LIMIT    = 1.0f;  // I項アンチワインドアップ上限
 float LINE_WHITE     = 40.0f;   // センサ白レベル
 float LINE_BLACK     = 900.0f;  // センサ黒レベル
@@ -23,12 +23,14 @@ float LINE_EPS       = 1e-3f;   // 全白判定のしきい値
 int   MAX_PWM        = 255;   // PWM上限
 int   MIN_PWM        = 0;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
-unsigned long LOST_MS      = 100; // 見失い判定（FOLLOW中に全白がこの時間続いたらリカバリ）
+unsigned long LOST_MS_RECIP      = 300; // Reciprocalモードの見失い判定時間
+unsigned long LOST_MS_UTURN      = 50; // UTurnモードの見失い判定時間
+unsigned long LOST_MS_LOOP       = 100; // Loopモードの見失い判定時間
 unsigned int ENDPOINT_DONE_COUNT = 2; // 端点遭遇回数の上限 (0 で無効)
 int   REC_STEER      = 128;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED_LEFT  = 90;   // Uターン時の左輪PWM（正で前進）
 int   UTURN_SPEED_RIGHT = -130;  // Uターン時の右輪PWM（正で前進）
-unsigned long UTURN_TIME_MS = 900; // 180度回頭に掛ける時間（要調整）
+unsigned long UTURN_TIME_MS = 810; // 180度回頭に掛ける時間（要調整）
 unsigned long PRE_DONE_DURATION_MS = 100; // PRE_DONE時間（DONEの前に前進or後退）
 // ----------------------------------------------------------------
 
@@ -65,9 +67,17 @@ unsigned int endpointCount = 0;
 
 // 見失い管理
 Timer lineLostTimer;
-int lastBlackDirState = 0;           // -1=左, +1=右, 0=中央/不明
 Timer uturnTimer;
 Timer preDoneTimer;
+
+unsigned long getLostMsForMode(RunMode mode) {
+  switch (mode) {
+    case RUNMODE_RECIP: return LOST_MS_RECIP;
+    case RUNMODE_UTURN: return LOST_MS_UTURN;
+    case RUNMODE_LOOP:  return LOST_MS_LOOP;
+    default:            return LOST_MS_RECIP;
+  }
+}
 
 const __FlashStringHelper* stateLabel(State s) {
   switch (s) {
@@ -115,12 +125,12 @@ void changeState(State newState,
   }
 }
 
-bool handleLineLostTimer(bool allWhite) {
+bool handleLineLostTimer(bool allWhite, unsigned long lostMs) {
   if (allWhite) {
     if (!lineLostTimer.running()) {
       lineLostTimer.start();
     }
-    if (lineLostTimer.elapsed() > LOST_MS) {
+    if (lineLostTimer.elapsed() > lostMs) {
       lineLostTimer.reset();
       return true;
     }
@@ -166,16 +176,11 @@ void handleUTurn() {
   changeState(SEEK_LINE_FWD, F("UTURN complete"));
 }
 
-void updateLastBlackDirState(const Sense& s) {
-  if (s.anyBlack) {
-    lastBlackDirState = getBlackDirState(s);
-  }
-}
-
 bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   int speed = speedSign * SEEK_SPEED;
   setWheels(speed, speed);
-  bool found = s.anyBlack;
+  SensorPosition position = directionToSensorPosition(speedSign);
+  bool found = getAnyBlack(s, position);
   if (found) {
     const __FlashStringHelper* reason =
       (followState == FOLLOW_FWD) ? F("Line found (forward)") : F("Line found (backward)");
@@ -188,13 +193,22 @@ bool handleSeekLine(State followState, int speedSign, const Sense& s) {
 FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   FollowResult res { false };
 
-  if (handleLineLostTimer(s.allWhite)) {
+  SensorPosition position = directionToSensorPosition(travelDir);
+  bool allWhite = getAllWhite(s, position);
+
+  if (handleLineLostTimer(allWhite, getLostMsForMode(runMode))) {
     res.lineLost = true;
     resetPidState(pid);
     return res;
   }
 
-  float e = computeError(s.rawL, s.rawC, s.rawR);
+  float e = (position == SensorPosition::Front)
+              ? computeError(s.rawL, s.rawC, s.rawR)
+              : computeError(s.rawRL, 0, s.rawRR);
+  if (allWhite) {
+    // e = pid.lastError;
+    e = 0;
+  }
   float kp = (travelDir > 0) ? KP_FWD : KP_BACK;
   float ki = (travelDir > 0) ? KI_FWD : KI_BACK;
   float kd = (travelDir > 0) ? KD_FWD : KD_BACK;
@@ -208,7 +222,7 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   pid.lastTimeMs = now;
 
   float derivative = 0.0f;
-  if (!s.allWhite && dt > 0.0f) {
+  if (!allWhite && dt > 0.0f) {
     pid.integral += e * dt;
     pid.integral = constrain(pid.integral, -PID_I_LIMIT, PID_I_LIMIT);
     derivative = (e - pid.lastError) / dt;
@@ -227,11 +241,11 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   return res;
 }
 
-void recoverLine(int basePwm, int travelDir) {
+void recoverLine(const Sense& s, int basePwm, int travelDir) {
   int dirSign = (travelDir >= 0) ? 1 : -1;
 
   int steerOffset;
-  int lastDir = lastBlackDirState;
+  int lastDir = getLastBlackDirState(s, directionToSensorPosition(travelDir));
   if (lastDir > 0) {
     steerOffset = REC_STEER;
   } else if (lastDir < 0) {
@@ -248,14 +262,15 @@ void recoverLine(int basePwm, int travelDir) {
 }
 
 bool handleRecover(const Sense& s, State followState, int basePwm, int travelDir) {
-  bool recovered = s.anyBlack;
+  SensorPosition position = directionToSensorPosition(travelDir);
+  bool recovered = getAnyBlack(s, position);
   if (recovered) {
     const __FlashStringHelper* reason =
       (followState == FOLLOW_FWD) ? F("Recovered (forward)") : F("Recovered (back)");
     changeState(followState, reason);
   }
   else {
-    recoverLine(basePwm, travelDir);
+    recoverLine(s, basePwm, travelDir);
   }
   
   return recovered;
@@ -342,8 +357,6 @@ void setup() {
 
 void loop() {
   Sense s = readSensors();
-  updateLastBlackDirState(s);
-
   switch (state) {
     // 端点(全白)から前進して黒ラインを掴む
     case SEEK_LINE_FWD: {
