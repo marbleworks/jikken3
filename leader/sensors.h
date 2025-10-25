@@ -29,13 +29,15 @@ struct Sense {
   bool allWhite;
   int frontBlackDirState;
   int rearBlackDirState;
-  SensorPosition lastBlackSensorPosition;
+  int lastBlackStateFront;
+  int lastBlackDirStateRear;
 };
 
 Sense readSensors();
 int computeFrontBlackDirState(const Sense& s);
 int computeRearBlackDirState(const Sense& s);
 int getBlackDirState(const Sense& s, SensorPosition position);
+int getLastBlackDirState(const Sense& s, SensorPosition position);
 bool getAnyBlack(Sense& s, SensorPosition position);
 bool getAllBlack(Sense& s, SensorPosition position);
 bool getAllWhite(Sense& s, SensorPosition position);

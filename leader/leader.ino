@@ -65,7 +65,6 @@ unsigned int endpointCount = 0;
 
 // 見失い管理
 Timer lineLostTimer;
-SensorPosition lastBlackSensorPosition = SensorPosition::Front;
 Timer uturnTimer;
 Timer preDoneTimer;
 
@@ -225,16 +224,13 @@ void recoverLine(const Sense& s, int basePwm, int travelDir) {
   int dirSign = (travelDir >= 0) ? 1 : -1;
 
   int steerOffset;
-  int lastDir = getBlackDirState(s, directionToSensorPosition(travelDir));
+  int lastDir = getLastBlackDirState(s, directionToSensorPosition(travelDir));
   if (lastDir > 0) {
     steerOffset = REC_STEER;
   } else if (lastDir < 0) {
     steerOffset = -REC_STEER;
   } else {
     bool rightBias = (millis() / 300) % 2;
-    if (lastBlackSensorPosition == SensorPosition::Rear) {
-      rightBias = !rightBias;
-    }
     steerOffset = rightBias ? REC_STEER : -REC_STEER;
   }
 
@@ -339,10 +335,6 @@ void setup() {
 
 void loop() {
   Sense s = readSensors();
-  if (s.anyBlack) {
-    lastBlackSensorPosition = s.lastBlackSensorPosition;
-  }
-
   switch (state) {
     // 端点(全白)から前進して黒ラインを掴む
     case SEEK_LINE_FWD: {
