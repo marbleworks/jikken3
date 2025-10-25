@@ -60,9 +60,24 @@ PIDState pidBackward{};
 unsigned int endpointCount = 0;
 
 // 見失い管理
-Timer lostTimer;
+Timer lineLostTimer;
 int lastBlackDirState = 0;           // -1=左, +1=右, 0=中央/不明
 Timer uturnTimer;
+
+bool handleLineLostTimer(bool allWhite) {
+  if (allWhite) {
+    if (!lineLostTimer.running()) {
+      lineLostTimer.start();
+    }
+    if (lineLostTimer.elapsed() > LOST_MS) {
+      return true;
+    }
+  } else if (lineLostTimer.running()) {
+    lineLostTimer.reset();
+  }
+
+  return false;
+}
 
 void handleUTurn() {
   if (!uturnTimer.running()) {
@@ -77,7 +92,7 @@ void handleUTurn() {
 
   setWheels(0, 0);
   state = SEEK_LINE_FWD;
-  lostTimer.reset();
+  lineLostTimer.reset();
   uturnTimer.reset();
   Serial.println(F("UTURN complete -> SEEK_LINE_FWD"));
 }
@@ -117,26 +132,19 @@ bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   if (found) {
     state = followState;
     resetPidForState(followState);
-    lostTimer.reset();
+    lineLostTimer.reset();
   }
-  
+
   return found;
 }
 
 FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   FollowResult res { false };
 
-  if (s.allWhite) {
-    if (!lostTimer.running()) {
-      lostTimer.start();
-    }
-    if (lostTimer.elapsed() > LOST_MS) {
-      res.lineLost = true;
-      resetPidForDir(travelDir);
-      return res;
-    }
-  } else {
-    lostTimer.reset();
+  if (handleLineLostTimer(s.allWhite)) {
+    res.lineLost = true;
+    resetPidForDir(travelDir);
+    return res;
   }
 
   float e = computeError(s.rawL, s.rawC, s.rawR);
@@ -198,7 +206,7 @@ bool recoverLine(const Sense& s, int basePwm, int travelDir) {
 bool handleRecover(const Sense& s, State followState, int basePwm, int travelDir) {
   bool recovered = recoverLine(s, basePwm, travelDir);
   if (recovered) {
-    lostTimer.reset();
+    lineLostTimer.reset();
     state = followState;
     resetPidForState(followState);
   }
@@ -220,7 +228,7 @@ void onEndpointEncountered() {
 
 void handleForwardEndpoint() {
   setWheels(0, 0);
-  lostTimer.reset();
+  lineLostTimer.reset();
 
   onEndpointEncountered();
   if (state == DONE) {
@@ -239,7 +247,7 @@ void handleForwardEndpoint() {
 
 void handleBackwardEndpoint() {
   setWheels(0, 0);
-  lostTimer.reset();
+  lineLostTimer.reset();
 
   onEndpointEncountered();
   if (state == DONE) {
