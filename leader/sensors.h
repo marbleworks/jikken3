@@ -22,6 +22,8 @@ struct Sense {
   bool anyBlack;
   bool allBlack;
   bool allWhite;
+  int frontBlackDirState;
+  int rearBlackDirState;
 };
 
 Sense readSensors();

@@ -53,6 +53,9 @@ Sense readSensors() {
   s.allBlack = s.allBlackFront && s.allBlackRear;
   s.allWhite = s.allWhiteFront && s.allWhiteRear;
 
+  s.frontBlackDirState = getFrontBlackDirState(s);
+  s.rearBlackDirState = getRearBlackDirState(s);
+
   displaySensorStates(s.isBlackL,
                       s.isBlackC,
                       s.isBlackR,
