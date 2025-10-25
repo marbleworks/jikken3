@@ -115,12 +115,12 @@ bool handleUTurnTimer() {
     uturnTimer.start();
   }
 
-  if (uturnTimer.elapsed() < UTURN_TIME_MS) {
-    return false;
+  if (uturnTimer.elapsed() > UTURN_TIME_MS) {
+    uturnTimer.reset();
+    return true;
   }
 
-  uturnTimer.reset();
-  return true;
+  return false;
 }
 
 void handleUTurn() {
