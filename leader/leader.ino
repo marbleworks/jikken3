@@ -26,7 +26,8 @@ int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴�
 unsigned long LOST_MS      = 100; // 見失い判定（FOLLOW中に全白がこの時間続いたらリカバリ）
 unsigned int ENDPOINT_DONE_COUNT = 2; // 端点遭遇回数の上限 (0 で無効)
 int   REC_STEER      = 128;    // リカバリ時の曲げ量（左右差）
-int   UTURN_SPEED    = 100;   // 片輪前進・片輪後退のPWM
+int   UTURN_SPEED_LEFT  = 100;   // Uターン時の左輪PWM（正で前進）
+int   UTURN_SPEED_RIGHT = -100;  // Uターン時の右輪PWM（正で前進）
 unsigned long UTURN_TIME_MS = 900; // 180度回頭に掛ける時間（要調整）
 // ----------------------------------------------------------------
 
@@ -140,7 +141,7 @@ bool handleUTurnTimer() {
 
 void handleUTurn() {
   if (!handleUTurnTimer()) {
-    setWheels(UTURN_SPEED, -UTURN_SPEED);
+    setWheels(UTURN_SPEED_LEFT, UTURN_SPEED_RIGHT);
     return;
   }
 
