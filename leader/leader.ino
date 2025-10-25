@@ -227,7 +227,7 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   return res;
 }
 
-bool recoverLine(const Sense& s, int basePwm, int travelDir) {
+void recoverLine(int basePwm, int travelDir) {
   int dirSign = (travelDir >= 0) ? 1 : -1;
 
   int steerOffset;
@@ -245,17 +245,19 @@ bool recoverLine(const Sense& s, int basePwm, int travelDir) {
   int right = constrain(basePwm - steerOffset, MIN_PWM, MAX_PWM) * dirSign;
 
   setWheels(left, right);
-
-  return s.anyBlack;
 }
 
 bool handleRecover(const Sense& s, State followState, int basePwm, int travelDir) {
-  bool recovered = recoverLine(s, basePwm, travelDir);
+  bool recovered = s.anyBlack;
   if (recovered) {
     const __FlashStringHelper* reason =
       (followState == FOLLOW_FWD) ? F("Recovered (forward)") : F("Recovered (back)");
     changeState(followState, reason);
   }
+  else {
+    recoverLine(basePwm, travelDir);
+  }
+  
   return recovered;
 }
 
