@@ -11,11 +11,11 @@ int   HYST           = 40;    // ヒステリシス
 int   BASE_FWD       = 100;   // 前進の基準PWM
 int   BASE_BACK      = 100;   // 後退の基準PWM
 float KP_FWD         = 0.2f;  // 前進Pゲイン
-float KP_BACK        = 0.1f;  // 後退Pゲイン
+float KP_BACK        = 0.05f;  // 後退Pゲイン
 float KI_FWD         = 0.05f;  // 前進Iゲイン
-float KI_BACK        = 0.05f;  // 後退Iゲイン
+float KI_BACK        = 0.0125f;  // 後退Iゲイン
 float KD_FWD         = 0.05f;  // 前進Dゲイン
-float KD_BACK        = 0.05f;  // 後退Dゲイン
+float KD_BACK        = 0.0125f;  // 後退Dゲイン
 float PID_I_LIMIT    = 1.0f;  // I項アンチワインドアップ上限
 float LINE_WHITE     = 40.0f;   // センサ白レベル
 float LINE_BLACK     = 900.0f;  // センサ黒レベル
@@ -195,7 +195,8 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
               ? computeError(s.rawL, s.rawC, s.rawR)
               : computeError(s.rawRL, 0, s.rawRR);
   if (allWhite) {
-    e = pid.lastError;
+    // e = pid.lastError;
+    e = 0;
   }
   float kp = (travelDir > 0) ? KP_FWD : KP_BACK;
   float ki = (travelDir > 0) ? KI_FWD : KI_BACK;
