@@ -2,6 +2,11 @@
 
 #include <Arduino.h>
 
+enum class SensorPosition {
+  Front,
+  Rear,
+};
+
 struct Sense {
   int rawL;
   int rawC;
@@ -24,6 +29,7 @@ struct Sense {
   bool allWhite;
   int frontBlackDirState;
   int rearBlackDirState;
+  SensorPosition lastBlackSensorPosition;
 };
 
 Sense readSensors();

@@ -66,6 +66,7 @@ unsigned int endpointCount = 0;
 // 見失い管理
 Timer lineLostTimer;
 int lastBlackDirState = 0;           // -1=左, +1=右, 0=中央/不明
+SensorPosition lastBlackSensorPosition = SensorPosition::Front;
 Timer uturnTimer;
 Timer preDoneTimer;
 
@@ -169,8 +170,10 @@ void handleUTurn() {
 void updateLastBlackDirState(const Sense& s) {
   if (s.anyBlackFront) {
     lastBlackDirState = s.frontBlackDirState;
+    lastBlackSensorPosition = SensorPosition::Front;
   } else if (s.anyBlackRear) {
     lastBlackDirState = s.rearBlackDirState;
+    lastBlackSensorPosition = SensorPosition::Rear;
   }
 }
 
@@ -240,6 +243,9 @@ void recoverLine(int basePwm, int travelDir) {
     steerOffset = -REC_STEER;
   } else {
     bool rightBias = (millis() / 300) % 2;
+    if (lastBlackSensorPosition == SensorPosition::Rear) {
+      rightBias = !rightBias;
+    }
     steerOffset = rightBias ? REC_STEER : -REC_STEER;
   }
 

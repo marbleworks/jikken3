@@ -55,6 +55,13 @@ Sense readSensors() {
 
   s.frontBlackDirState = getFrontBlackDirState(s);
   s.rearBlackDirState = getRearBlackDirState(s);
+  if (s.anyBlackFront) {
+    s.lastBlackSensorPosition = SensorPosition::Front;
+  } else if (s.anyBlackRear) {
+    s.lastBlackSensorPosition = SensorPosition::Rear;
+  } else {
+    s.lastBlackSensorPosition = SensorPosition::Front;
+  }
 
   displaySensorStates(s.isBlackL,
                       s.isBlackC,
