@@ -29,6 +29,7 @@ int   REC_STEER      = 128;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED_LEFT  = 90;   // Uターン時の左輪PWM（正で前進）
 int   UTURN_SPEED_RIGHT = -130;  // Uターン時の右輪PWM（正で前進）
 unsigned long UTURN_TIME_MS = 900; // 180度回頭に掛ける時間（要調整）
+unsigned long PRE_DONE_DURATION_MS = 200; // PRE_DONE時間（DONEの前に前進or後退）
 // ----------------------------------------------------------------
 
 // ====== struct をグローバルで定義 ======
@@ -49,6 +50,7 @@ enum State {
   DONE               // 完了（停止）
 };
 State state = SEEK_LINE_FWD;
+State prevState = SEEK_LINE_FWD;
 
 struct PIDState {
   float integral;
@@ -66,10 +68,6 @@ Timer lineLostTimer;
 int lastBlackDirState = 0;           // -1=左, +1=右, 0=中央/不明
 Timer uturnTimer;
 Timer preDoneTimer;
-
-const unsigned long PRE_DONE_DURATION_MS = 200;
-int preDoneLeftPwm = 0;
-int preDoneRightPwm = 0;
 
 const __FlashStringHelper* stateLabel(State s) {
   switch (s) {
@@ -100,48 +98,14 @@ void resetPidForState(State followState) {
   }
 }
 
-bool enterPreDone(State prevState) {
-  switch (prevState) {
-    case FOLLOW_BACK:
-      preDoneLeftPwm = preDoneRightPwm = -BASE_BACK;
-      break;
-    case FOLLOW_FWD:
-      preDoneLeftPwm = preDoneRightPwm = BASE_FWD;
-      break;
-    default:
-      return false;
-  }
-
-  preDoneTimer.reset();
-  preDoneTimer.start();
-  setWheels(preDoneLeftPwm, preDoneRightPwm);
-  return true;
-}
-
 void changeState(State newState,
                  const __FlashStringHelper* reason = nullptr) {
   if (state == newState) {
     return;
   }
 
-  State prevState = state;
-  bool shouldStopImmediately = true;
-
-  if (newState == PRE_DONE) {
-    if (enterPreDone(prevState)) {
-      shouldStopImmediately = false;
-    } else {
-      newState = DONE;
-    }
-  }
-
+  prevState = state;
   state = newState;
-  if (state != PRE_DONE) {
-    preDoneTimer.reset();
-  }
-  if (shouldStopImmediately) {
-    setWheels(0, 0);
-  }
   resetPidForState(newState);
 
   if (reason) {
@@ -180,6 +144,19 @@ bool handleUTurnTimer() {
   return false;
 }
 
+bool handlePreDoneTimer() {
+  if (!preDoneTimer.running()) {
+    preDoneTimer.start();
+  }
+
+  if (preDoneTimer.elapsed() > PRE_DONE_DURATION_MS) {
+    preDoneTimer.reset();
+    return true;
+  }
+
+  return false;
+}
+
 void handleUTurn() {
   if (!handleUTurnTimer()) {
     setWheels(UTURN_SPEED_LEFT, UTURN_SPEED_RIGHT);
@@ -189,7 +166,12 @@ void handleUTurn() {
   changeState(SEEK_LINE_FWD, F("UTURN complete"));
 }
 
-void updateLastBlackDirState(const Sense& s) {
+void updateLastBlackDirState(const Sense& s) {if (!handleUTurnTimer()) {
+    setWheels(UTURN_SPEED_LEFT, UTURN_SPEED_RIGHT);
+    return;
+  }
+
+  changeState(SEEK_LINE_FWD, F("UTURN complete"));
   if (s.anyBlack) {
     lastBlackDirState = getBlackDirState(s);
   }
@@ -333,6 +315,23 @@ void handleBackwardLineLost() {
   handleBackwardEndpoint();
 }
 
+void handlePreDone() {
+  if (!handlePreDoneTimer()) {
+    switch (prevState) {
+    case FOLLOW_FWD:
+      setWheels(BASE_FWD, BASE_FWD);
+      break;
+    case FOLLOW_BACK:
+      setWheels(-BASE_BACK, -BASE_BACK);
+      break;
+    }
+
+    return;
+  }
+
+  changeState(DONE, F("Pre-done complete"));
+}
+
 // ------------------ setup / loop ------------------
 void setup() {
   Serial.begin(115200);
@@ -402,11 +401,7 @@ void loop() {
     }
 
     case PRE_DONE: {
-      if (preDoneTimer.elapsed() >= PRE_DONE_DURATION_MS) {
-        changeState(DONE, F("Pre-done complete"));
-      } else {
-        setWheels(preDoneLeftPwm, preDoneRightPwm);
-      }
+      handlePreDone();
       break;
     }
 
