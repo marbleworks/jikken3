@@ -84,8 +84,9 @@ void changeState(State newState,
     return;
   }
 
-  setWheels(0, 0);
   state = newState;
+  setWheels(0, 0);
+  resetPidForState(newState);
 
   if (reason) {
     Serial.print(reason);
@@ -152,14 +153,6 @@ void resetPidForState(State followState) {
   }
 }
 
-void resetPidForDir(int travelDir) {
-  if (travelDir >= 0) {
-    resetPidState(pidForward);
-  } else {
-    resetPidState(pidBackward);
-  }
-}
-
 bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   int speed = speedSign * SEEK_SPEED;
   setWheels(speed, speed);
@@ -168,7 +161,6 @@ bool handleSeekLine(State followState, int speedSign, const Sense& s) {
     const __FlashStringHelper* reason =
       (followState == FOLLOW_FWD) ? F("Line found (forward)") : F("Line found (backward)");
     changeState(followState, reason);
-    resetPidForState(followState);
   }
 
   return found;
@@ -179,7 +171,6 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
 
   if (handleLineLostTimer(s.allWhite)) {
     res.lineLost = true;
-    resetPidForDir(travelDir);
     return res;
   }
 
@@ -245,7 +236,6 @@ bool handleRecover(const Sense& s, State followState, int basePwm, int travelDir
     const __FlashStringHelper* reason =
       (followState == FOLLOW_FWD) ? F("Recovered (forward)") : F("Recovered (back)");
     changeState(followState, reason);
-    resetPidForState(followState);
   }
   return recovered;
 }
