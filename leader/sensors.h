@@ -41,6 +41,6 @@ int getLastBlackDirState(const Sense& s, SensorPosition position);
 bool getAnyBlack(const Sense& s, SensorPosition position);
 bool getAllBlack(const Sense& s, SensorPosition position);
 bool getAllWhite(const Sense& s, SensorPosition position);
-float computeError(const Sense& s, SensorPosition position);
+float computeError(int rawL, int rawC, int rawR);
 SensorPosition directionToSensorPosition(int direction);
 
