@@ -48,6 +48,18 @@ enum State {
 };
 State state = SEEK_LINE_FWD;
 
+void changeState(State newState, const __FlashStringHelper* logMessage = nullptr) {
+  if (state == newState) {
+    return;
+  }
+
+  state = newState;
+
+  if (logMessage) {
+    Serial.println(logMessage);
+  }
+}
+
 struct PIDState {
   float integral;
   float lastError;
@@ -91,10 +103,9 @@ void handleUTurn() {
   }
 
   setWheels(0, 0);
-  state = SEEK_LINE_FWD;
   lineLostTimer.reset();
   uturnTimer.reset();
-  Serial.println(F("UTURN complete -> SEEK_LINE_FWD"));
+  changeState(SEEK_LINE_FWD, F("UTURN complete -> SEEK_LINE_FWD"));
 }
 
 void updateLastBlackDirState(const Sense& s) {
@@ -130,7 +141,7 @@ bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   setWheels(speed, speed);
   bool found = s.anyBlack;
   if (found) {
-    state = followState;
+    changeState(followState);
     resetPidForState(followState);
     lineLostTimer.reset();
   }
@@ -207,15 +218,14 @@ bool handleRecover(const Sense& s, State followState, int basePwm, int travelDir
   bool recovered = recoverLine(s, basePwm, travelDir);
   if (recovered) {
     lineLostTimer.reset();
-    state = followState;
+    changeState(followState);
     resetPidForState(followState);
   }
   return recovered;
 }
 
 void handleEndpointLimitReached() {
-  Serial.println(F("Endpoint limit reached -> DONE"));
-  state = DONE;
+  changeState(DONE, F("Endpoint limit reached -> DONE"));
   uturnTimer.reset();
 }
 
@@ -236,12 +246,10 @@ void handleForwardEndpoint() {
   }
 
   if (runMode == RUNMODE_UTURN) {
-    Serial.println(F("Endpoint (forward) -> UTURN"));
     uturnTimer.start();
-    state = UTURN;
+    changeState(UTURN, F("Endpoint (forward) -> UTURN"));
   } else {
-    state = SEEK_LINE_BACK;
-    Serial.println(F("Endpoint (forward) -> SEEK_LINE_BACK"));
+    changeState(SEEK_LINE_BACK, F("Endpoint (forward) -> SEEK_LINE_BACK"));
   }
 }
 
@@ -254,14 +262,12 @@ void handleBackwardEndpoint() {
     return;
   }
 
-  state = SEEK_LINE_FWD;
-  Serial.println(F("Endpoint (backward) -> SEEK_LINE_FWD"));
+  changeState(SEEK_LINE_FWD, F("Endpoint (backward) -> SEEK_LINE_FWD"));
 }
 
 void handleForwardLineLost() {
   if (runMode == RUNMODE_LOOP) {
-    state = RECOVER_FWD;
-    Serial.println(F("Line lost (forward) -> RECOVER_FWD"));
+    changeState(RECOVER_FWD, F("Line lost (forward) -> RECOVER_FWD"));
     return;
   }
 
@@ -270,8 +276,7 @@ void handleForwardLineLost() {
 
 void handleBackwardLineLost() {
   if (runMode == RUNMODE_LOOP) {
-    state = RECOVER_BACK;
-    Serial.println(F("Line lost (backward) -> RECOVER_BACK"));
+    changeState(RECOVER_BACK, F("Line lost (backward) -> RECOVER_BACK"));
     return;
   }
 
