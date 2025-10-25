@@ -79,21 +79,13 @@ const __FlashStringHelper* stateLabel(State s) {
 }
 
 void changeState(State newState,
-                 const __FlashStringHelper* reason = nullptr,
-                 bool resetLineLost = false,
-                 bool resetUTurn = false) {
+                 const __FlashStringHelper* reason = nullptr) {
   if (state == newState) {
     return;
   }
 
+  setWheels(0, 0);
   state = newState;
-
-  if (resetLineLost) {
-    lineLostTimer.reset();
-  }
-  if (resetUTurn) {
-    uturnTimer.reset();
-  }
 
   if (reason) {
     Serial.print(reason);
@@ -108,6 +100,7 @@ bool handleLineLostTimer(bool allWhite) {
       lineLostTimer.start();
     }
     if (lineLostTimer.elapsed() > LOST_MS) {
+      lineLostTimer.reset();
       return true;
     }
   } else if (lineLostTimer.running()) {
@@ -117,19 +110,27 @@ bool handleLineLostTimer(bool allWhite) {
   return false;
 }
 
-void handleUTurn() {
+bool handleUTurnTimer() {
   if (!uturnTimer.running()) {
     uturnTimer.start();
   }
 
-  unsigned long elapsed = uturnTimer.elapsed();
-  if (elapsed < UTURN_TIME_MS) {
+  if (uturnTimer.elapsed() < UTURN_TIME_MS) {
+    return false;
+  }
+
+  uturnTimer.reset();
+  return true;
+}
+
+void handleUTurn() {
+  if (!handleUTurnTimer()) {
     setWheels(UTURN_SPEED, -UTURN_SPEED);
     return;
   }
 
-  setWheels(0, 0);
-  changeState(SEEK_LINE_FWD, F("UTURN complete"), true, true);
+  lineLostTimer.reset();
+  changeState(SEEK_LINE_FWD, F("UTURN complete"));
 }
 
 void updateLastBlackDirState(const Sense& s) {
@@ -167,7 +168,8 @@ bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   if (found) {
     const __FlashStringHelper* reason =
       (followState == FOLLOW_FWD) ? F("Line found (forward)") : F("Line found (backward)");
-    changeState(followState, reason, true);
+    lineLostTimer.reset();
+    changeState(followState, reason);
     resetPidForState(followState);
   }
 
@@ -244,14 +246,16 @@ bool handleRecover(const Sense& s, State followState, int basePwm, int travelDir
   if (recovered) {
     const __FlashStringHelper* reason =
       (followState == FOLLOW_FWD) ? F("Recovered (forward)") : F("Recovered (back)");
-    changeState(followState, reason, true);
+    lineLostTimer.reset();
+    changeState(followState, reason);
     resetPidForState(followState);
   }
   return recovered;
 }
 
 void handleEndpointLimitReached() {
-  changeState(DONE, F("Endpoint limit reached"), false, true);
+  uturnTimer.reset();
+  changeState(DONE, F("Endpoint limit reached"));
 }
 
 void onEndpointEncountered() {
@@ -268,10 +272,11 @@ void handleForwardEndpoint() {
   }
 
   if (runMode == RUNMODE_UTURN) {
-    uturnTimer.start();
-    changeState(UTURN, F("Endpoint (forward)"), true);
+    lineLostTimer.reset();
+    changeState(UTURN, F("Endpoint (forward)"));
   } else {
-    changeState(SEEK_LINE_BACK, F("Endpoint (forward)"), true);
+    lineLostTimer.reset();
+    changeState(SEEK_LINE_BACK, F("Endpoint (forward)"));
   }
 }
 
@@ -281,7 +286,8 @@ void handleBackwardEndpoint() {
     return;
   }
 
-  changeState(SEEK_LINE_FWD, F("Endpoint (backward)"), true);
+  lineLostTimer.reset();
+  changeState(SEEK_LINE_FWD, F("Endpoint (backward)"));
 }
 
 void handleForwardLineLost() {
