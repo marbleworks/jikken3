@@ -84,6 +84,17 @@ const __FlashStringHelper* stateLabel(State s) {
   }
 }
 
+SensorOrientation sensorOrientationForState(State s) {
+  switch (s) {
+    case SEEK_LINE_BACK:
+    case FOLLOW_BACK:
+    case RECOVER_BACK:
+      return SensorOrientation::Back;
+    default:
+      return SensorOrientation::Front;
+  }
+}
+
 void resetPidState(PIDState& pid) {
   pid.integral = 0.0f;
   pid.lastError = 0.0f;
@@ -194,7 +205,7 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
     return res;
   }
 
-  float e = computeError(s.rawL, s.rawC, s.rawR);
+  float e = computeError(s);
   float kp = (travelDir > 0) ? KP_FWD : KP_BACK;
   float ki = (travelDir > 0) ? KI_FWD : KI_BACK;
   float kd = (travelDir > 0) ? KD_FWD : KD_BACK;
@@ -341,7 +352,8 @@ void setup() {
 }
 
 void loop() {
-  Sense s = readSensors();
+  SensorOrientation orientation = sensorOrientationForState(state);
+  Sense s = readSensors(orientation);
   updateLastBlackDirState(s);
 
   switch (state) {

@@ -2,6 +2,11 @@
 
 #include <Arduino.h>
 
+enum class SensorOrientation {
+  Front,
+  Back
+};
+
 struct Sense {
   int rawL;
   int rawC;
@@ -12,9 +17,11 @@ struct Sense {
   bool anyBlack;
   bool allBlack;
   bool allWhite;
+  bool hasCenter;
+  SensorOrientation orientation;
 };
 
-Sense readSensors();
+Sense readSensors(SensorOrientation orientation);
 int getBlackDirState(const Sense& s);
-float computeError(int rawL, int rawC, int rawR);
+float computeError(const Sense& s);
 

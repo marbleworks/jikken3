@@ -13,31 +13,51 @@ static bool applyHysteresis(int raw, bool lastState, int thH, int thL) {
   return lastState ? (raw > thL) : (raw > thH);
 }
 
-Sense readSensors() {
+Sense readSensors(SensorOrientation orientation) {
   Sense s{};
-  s.rawL = analogRead(pinL);
-  s.rawC = analogRead(pinC);
-  s.rawR = analogRead(pinR);
+  s.orientation = orientation;
+  s.hasCenter = (orientation == SensorOrientation::Front);
 
-  static bool lastLBlack = false;
-  static bool lastCBlack = false;
-  static bool lastRBlack = false;
+  static bool lastFrontLBlack = false;
+  static bool lastFrontCBlack = false;
+  static bool lastFrontRBlack = false;
+  static bool lastBackLBlack  = false;
+  static bool lastBackRBlack  = false;
+
   int thH = THRESHOLD + HYST;
   int thL = THRESHOLD - HYST;
 
-  s.isBlackL = applyHysteresis(s.rawL, lastLBlack, thH, thL);
-  s.isBlackC = applyHysteresis(s.rawC, lastCBlack, thH, thL);
-  s.isBlackR = applyHysteresis(s.rawR, lastRBlack, thH, thL);
+  if (orientation == SensorOrientation::Front) {
+    s.rawL = analogRead(pinL);
+    s.rawC = analogRead(pinC);
+    s.rawR = analogRead(pinR);
 
-  lastLBlack = s.isBlackL;
-  lastCBlack = s.isBlackC;
-  lastRBlack = s.isBlackR;
+    s.isBlackL = applyHysteresis(s.rawL, lastFrontLBlack, thH, thL);
+    s.isBlackC = applyHysteresis(s.rawC, lastFrontCBlack, thH, thL);
+    s.isBlackR = applyHysteresis(s.rawR, lastFrontRBlack, thH, thL);
 
-  s.anyBlack = s.isBlackL || s.isBlackC || s.isBlackR;
-  s.allBlack = s.isBlackL && s.isBlackC && s.isBlackR;
+    lastFrontLBlack = s.isBlackL;
+    lastFrontCBlack = s.isBlackC;
+    lastFrontRBlack = s.isBlackR;
+  } else {
+    s.rawL = analogRead(pinBackL);
+    s.rawR = analogRead(pinBackR);
+    s.rawC = (s.rawL + s.rawR) / 2;
+
+    s.isBlackL = applyHysteresis(s.rawL, lastBackLBlack, thH, thL);
+    s.isBlackR = applyHysteresis(s.rawR, lastBackRBlack, thH, thL);
+    s.isBlackC = false;
+
+    lastBackLBlack = s.isBlackL;
+    lastBackRBlack = s.isBlackR;
+  }
+
+  bool centerActive = s.hasCenter && s.isBlackC;
+  s.anyBlack = s.isBlackL || centerActive || s.isBlackR;
+  s.allBlack = s.isBlackL && s.isBlackR && (!s.hasCenter || s.isBlackC);
   s.allWhite = !s.anyBlack;
 
-  displaySensorStates(s.isBlackL, s.isBlackC, s.isBlackR);
+  displaySensorStates(orientation, s.isBlackL, centerActive, s.isBlackR);
 
   return s;
 }
@@ -49,14 +69,23 @@ int getBlackDirState(const Sense& s) {
   if (s.isBlackR && !s.isBlackL) {
     return +1;
   }
-  if (s.isBlackC || s.allBlack) {
-    return 0;
+
+  if (s.hasCenter) {
+    if (s.isBlackC || s.allBlack) {
+      return 0;
+    }
+  } else {
+    if (s.isBlackL && s.isBlackR) {
+      return 0;
+    }
   }
+
   return 0;
 }
 
-float computeError(int rawL, int rawC, int rawR) {
-  static float lastErr = 0.0f;
+float computeError(const Sense& sense) {
+  static float lastErrFront = 0.0f;
+  static float lastErrBack  = 0.0f;
 
   auto norm = [&](int v) -> float {
     float x = (v - LINE_WHITE) / (LINE_BLACK - LINE_WHITE);
@@ -65,16 +94,20 @@ float computeError(int rawL, int rawC, int rawR) {
     return x;
   };
 
-  float bL = norm(rawL);
-  float bC = norm(rawC);
-  float bR = norm(rawR);
+  float bL = norm(sense.rawL);
+  float bR = norm(sense.rawR);
+  float bC = sense.hasCenter ? norm(sense.rawC) : 0.0f;
 
-  float s = bL + bC + bR;
-  if (s < LINE_EPS) {
+  float sum = bL + bR + (sense.hasCenter ? bC : 0.0f);
+
+  float& lastErr = (sense.orientation == SensorOrientation::Front) ?
+                   lastErrFront : lastErrBack;
+
+  if (sum < LINE_EPS) {
     return lastErr;
   }
 
-  float err = (-1.0f * bL + 1.0f * bR) / s;
+  float err = (-1.0f * bL + 1.0f * bR) / sum;
 
   lastErr = err;
   return err;
