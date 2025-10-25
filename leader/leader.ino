@@ -166,12 +166,7 @@ void handleUTurn() {
   changeState(SEEK_LINE_FWD, F("UTURN complete"));
 }
 
-void updateLastBlackDirState(const Sense& s) {if (!handleUTurnTimer()) {
-    setWheels(UTURN_SPEED_LEFT, UTURN_SPEED_RIGHT);
-    return;
-  }
-
-  changeState(SEEK_LINE_FWD, F("UTURN complete"));
+void updateLastBlackDirState(const Sense& s) {
   if (s.anyBlack) {
     lastBlackDirState = getBlackDirState(s);
   }
@@ -345,7 +340,6 @@ void setup() {
 void loop() {
   Sense s = readSensors();
   updateLastBlackDirState(s);
-  Serial.println(state);
 
   switch (state) {
     // 端点(全白)から前進して黒ラインを掴む
