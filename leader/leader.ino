@@ -29,6 +29,7 @@ int   REC_STEER      = 128;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED_LEFT  = 90;   // Uターン時の左輪PWM（正で前進）
 int   UTURN_SPEED_RIGHT = -130;  // Uターン時の右輪PWM（正で前進）
 unsigned long UTURN_TIME_MS = 900; // 180度回頭に掛ける時間（要調整）
+unsigned long PRE_DONE_DURATION_MS = 100; // PRE_DONE時間（DONEの前に前進or後退）
 // ----------------------------------------------------------------
 
 // ====== struct をグローバルで定義 ======
@@ -45,9 +46,11 @@ enum State {
   FOLLOW_BACK,       // 後退でライン追従（復路）
   RECOVER_BACK,      // 後退中に見失い→自動復帰
   UTURN,             // Uターン中
+  PRE_DONE,          // 完全停止前の慣性動作
   DONE               // 完了（停止）
 };
 State state = SEEK_LINE_FWD;
+State prevState = SEEK_LINE_FWD;
 
 struct PIDState {
   float integral;
@@ -64,6 +67,7 @@ unsigned int endpointCount = 0;
 Timer lineLostTimer;
 int lastBlackDirState = 0;           // -1=左, +1=右, 0=中央/不明
 Timer uturnTimer;
+Timer preDoneTimer;
 
 const __FlashStringHelper* stateLabel(State s) {
   switch (s) {
@@ -74,6 +78,7 @@ const __FlashStringHelper* stateLabel(State s) {
     case FOLLOW_BACK:      return F("FOLLOW_BACK");
     case RECOVER_BACK:     return F("RECOVER_BACK");
     case UTURN:            return F("UTURN");
+    case PRE_DONE:         return F("PRE_DONE");
     case DONE:             return F("DONE");
     default:               return F("UNKNOWN");
   }
@@ -99,8 +104,8 @@ void changeState(State newState,
     return;
   }
 
+  prevState = state;
   state = newState;
-  setWheels(0, 0);
   resetPidForState(newState);
 
   if (reason) {
@@ -133,6 +138,19 @@ bool handleUTurnTimer() {
 
   if (uturnTimer.elapsed() > UTURN_TIME_MS) {
     uturnTimer.reset();
+    return true;
+  }
+
+  return false;
+}
+
+bool handlePreDoneTimer() {
+  if (!preDoneTimer.running()) {
+    preDoneTimer.start();
+  }
+
+  if (preDoneTimer.elapsed() > PRE_DONE_DURATION_MS) {
+    preDoneTimer.reset();
     return true;
   }
 
@@ -209,7 +227,7 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   return res;
 }
 
-bool recoverLine(const Sense& s, int basePwm, int travelDir) {
+void recoverLine(int basePwm, int travelDir) {
   int dirSign = (travelDir >= 0) ? 1 : -1;
 
   int steerOffset;
@@ -227,34 +245,40 @@ bool recoverLine(const Sense& s, int basePwm, int travelDir) {
   int right = constrain(basePwm - steerOffset, MIN_PWM, MAX_PWM) * dirSign;
 
   setWheels(left, right);
-
-  return s.anyBlack;
 }
 
 bool handleRecover(const Sense& s, State followState, int basePwm, int travelDir) {
-  bool recovered = recoverLine(s, basePwm, travelDir);
+  bool recovered = s.anyBlack;
   if (recovered) {
     const __FlashStringHelper* reason =
       (followState == FOLLOW_FWD) ? F("Recovered (forward)") : F("Recovered (back)");
     changeState(followState, reason);
   }
+  else {
+    recoverLine(basePwm, travelDir);
+  }
+  
   return recovered;
 }
 
-void handleEndpointLimitReached() {
-  changeState(DONE, F("Endpoint limit reached"));
-}
-
-void onEndpointEncountered() {
+bool onEndpointEncountered() {
   ++endpointCount;
   if (ENDPOINT_DONE_COUNT > 0 && endpointCount >= ENDPOINT_DONE_COUNT) {
-    handleEndpointLimitReached();
+    if (state == FOLLOW_FWD) {
+      changeState(PRE_DONE, F("Endpoint limit reached"));
+    }
+    else {
+      changeState(DONE, F("Endpoint limit reached"));
+    }
+
+    return true;
   }
+
+  return false;
 }
 
 void handleForwardEndpoint() {
-  onEndpointEncountered();
-  if (state == DONE) {
+  if (onEndpointEncountered()) {
     return;
   }
 
@@ -266,8 +290,7 @@ void handleForwardEndpoint() {
 }
 
 void handleBackwardEndpoint() {
-  onEndpointEncountered();
-  if (state == DONE) {
+  if (onEndpointEncountered()) {
     return;
   }
 
@@ -292,6 +315,18 @@ void handleBackwardLineLost() {
   handleBackwardEndpoint();
 }
 
+void handlePreDone() {
+  if (!handlePreDoneTimer()) {
+    if (prevState == FOLLOW_FWD) {
+      setWheels(BASE_FWD, BASE_FWD);
+    }
+
+    return;
+  }
+
+  changeState(DONE, F("Pre-done complete"));
+}
+
 // ------------------ setup / loop ------------------
 void setup() {
   Serial.begin(115200);
@@ -308,7 +343,6 @@ void setup() {
 void loop() {
   Sense s = readSensors();
   updateLastBlackDirState(s);
-  Serial.println(state);
 
   switch (state) {
     // 端点(全白)から前進して黒ラインを掴む
@@ -357,6 +391,11 @@ void loop() {
 
     case UTURN: {
       handleUTurn();
+      break;
+    }
+
+    case PRE_DONE: {
+      handlePreDone();
       break;
     }
 
