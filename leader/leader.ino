@@ -166,16 +166,16 @@ bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   return found;
 }
 
-FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
+FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   FollowResult res { false };
 
   if (handleLineLostTimer(s.allWhite)) {
     res.lineLost = true;
+    resetPidState(pid);
     return res;
   }
 
   float e = computeError(s.rawL, s.rawC, s.rawR);
-  PIDState& pid = (travelDir > 0) ? pidForward : pidBackward;
   float kp = (travelDir > 0) ? KP_FWD : KP_BACK;
   float ki = (travelDir > 0) ? KI_FWD : KI_BACK;
   float kd = (travelDir > 0) ? KD_FWD : KD_BACK;
@@ -318,7 +318,7 @@ void loop() {
 
     // 前進でライントレース（P制御）
     case FOLLOW_FWD: {
-      FollowResult r = runLineTraceCommon(s, +1);
+      FollowResult r = runLineTraceCommon(s, pidForward, +1);
       if (r.lineLost) {
         handleForwardLineLost();
         break;
@@ -340,7 +340,7 @@ void loop() {
 
     // 後退でライントレース（P制御：進行方向が逆なので注意）
     case FOLLOW_BACK: {
-      FollowResult r = runLineTraceCommon(s, -1);
+      FollowResult r = runLineTraceCommon(s, pidBackward, -1);
       if (r.lineLost) {
         handleBackwardLineLost();
         break;
