@@ -264,20 +264,18 @@ bool handleRecover(const Sense& s, State followState, int basePwm, int travelDir
   return recovered;
 }
 
-void handleEndpointLimitReached() {
-  changeState(PRE_DONE, F("Endpoint limit reached"));
-}
-
-void onEndpointEncountered() {
+bool onEndpointEncountered() {
   ++endpointCount;
   if (ENDPOINT_DONE_COUNT > 0 && endpointCount >= ENDPOINT_DONE_COUNT) {
-    handleEndpointLimitReached();
+    changeState(PRE_DONE, F("Endpoint limit reached"));
+    return true;
   }
+
+  return false;
 }
 
 void handleForwardEndpoint() {
-  onEndpointEncountered();
-  if (state == DONE) {
+  if (onEndpointEncountered()) {
     return;
   }
 
@@ -289,8 +287,7 @@ void handleForwardEndpoint() {
 }
 
 void handleBackwardEndpoint() {
-  onEndpointEncountered();
-  if (state == DONE) {
+  if (onEndpointEncountered()) {
     return;
   }
 
