@@ -40,4 +40,5 @@ bool getAnyBlack(Sense& s, SensorPosition position);
 bool getAllBlack(Sense& s, SensorPosition position);
 bool getAllWhite(Sense& s, SensorPosition position);
 float computeError(int rawL, int rawC, int rawR);
+SensorPosition directionToSensorPosition(int direction);
 

@@ -65,7 +65,6 @@ unsigned int endpointCount = 0;
 
 // 見失い管理
 Timer lineLostTimer;
-int lastBlackDirState = 0;           // -1=左, +1=右, 0=中央/不明
 SensorPosition lastBlackSensorPosition = SensorPosition::Front;
 Timer uturnTimer;
 Timer preDoneTimer;
@@ -167,16 +166,6 @@ void handleUTurn() {
   changeState(SEEK_LINE_FWD, F("UTURN complete"));
 }
 
-void updateLastBlackDirState(const Sense& s) {
-  if (s.anyBlackFront) {
-    lastBlackDirState = getBlackDirState(s, SensorPosition::Front);
-    lastBlackSensorPosition = SensorPosition::Front;
-  } else if (s.anyBlackRear) {
-    lastBlackDirState = getBlackDirState(s, SensorPosition::Rear);
-    lastBlackSensorPosition = SensorPosition::Rear;
-  }
-}
-
 bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   int speed = speedSign * SEEK_SPEED;
   setWheels(speed, speed);
@@ -232,11 +221,11 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   return res;
 }
 
-void recoverLine(int basePwm, int travelDir) {
+void recoverLine(const Sense& s, int basePwm, int travelDir) {
   int dirSign = (travelDir >= 0) ? 1 : -1;
 
   int steerOffset;
-  int lastDir = lastBlackDirState;
+  int lastDir = getBlackDirState(s, directionToSensorPosition(travelDir));
   if (lastDir > 0) {
     steerOffset = REC_STEER;
   } else if (lastDir < 0) {
@@ -263,7 +252,7 @@ bool handleRecover(const Sense& s, State followState, int basePwm, int travelDir
     changeState(followState, reason);
   }
   else {
-    recoverLine(basePwm, travelDir);
+    recoverLine(s, basePwm, travelDir);
   }
   
   return recovered;
@@ -350,7 +339,9 @@ void setup() {
 
 void loop() {
   Sense s = readSensors();
-  updateLastBlackDirState(s);
+  if (s.anyBlack) {
+    lastBlackSensorPosition = s.lastBlackSensorPosition;
+  }
 
   switch (state) {
     // 端点(全白)から前進して黒ラインを掴む

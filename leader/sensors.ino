@@ -162,3 +162,13 @@ float computeError(int rawL, int rawC, int rawR) {
   lastErr = err;
   return err;
 }
+
+SensorPosition directionToSensorPosition(int direction) {
+  if (direction == 1) {
+    return SensorPosition::Front;
+  }
+  if (direction == -1) {
+    return SensorPosition::Rear;
+  }
+  return SensorPosition::Front;
+}
