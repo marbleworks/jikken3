@@ -45,6 +45,7 @@ enum State {
   FOLLOW_BACK,       // 後退でライン追従（復路）
   RECOVER_BACK,      // 後退中に見失い→自動復帰
   UTURN,             // Uターン中
+  PRE_DONE,          // 完全停止前の慣性動作
   DONE               // 完了（停止）
 };
 State state = SEEK_LINE_FWD;
@@ -64,6 +65,11 @@ unsigned int endpointCount = 0;
 Timer lineLostTimer;
 int lastBlackDirState = 0;           // -1=左, +1=右, 0=中央/不明
 Timer uturnTimer;
+Timer preDoneTimer;
+
+const unsigned long PRE_DONE_DURATION_MS = 200;
+int preDoneLeftPwm = 0;
+int preDoneRightPwm = 0;
 
 const __FlashStringHelper* stateLabel(State s) {
   switch (s) {
@@ -74,6 +80,7 @@ const __FlashStringHelper* stateLabel(State s) {
     case FOLLOW_BACK:      return F("FOLLOW_BACK");
     case RECOVER_BACK:     return F("RECOVER_BACK");
     case UTURN:            return F("UTURN");
+    case PRE_DONE:         return F("PRE_DONE");
     case DONE:             return F("DONE");
     default:               return F("UNKNOWN");
   }
@@ -93,14 +100,48 @@ void resetPidForState(State followState) {
   }
 }
 
+bool enterPreDone(State prevState) {
+  switch (prevState) {
+    case FOLLOW_BACK:
+      preDoneLeftPwm = preDoneRightPwm = -BASE_BACK;
+      break;
+    case FOLLOW_FWD:
+      preDoneLeftPwm = preDoneRightPwm = BASE_FWD;
+      break;
+    default:
+      return false;
+  }
+
+  preDoneTimer.reset();
+  preDoneTimer.start();
+  setWheels(preDoneLeftPwm, preDoneRightPwm);
+  return true;
+}
+
 void changeState(State newState,
                  const __FlashStringHelper* reason = nullptr) {
   if (state == newState) {
     return;
   }
 
+  State prevState = state;
+  bool shouldStopImmediately = true;
+
+  if (newState == PRE_DONE) {
+    if (enterPreDone(prevState)) {
+      shouldStopImmediately = false;
+    } else {
+      newState = DONE;
+    }
+  }
+
   state = newState;
-  setWheels(0, 0);
+  if (state != PRE_DONE) {
+    preDoneTimer.reset();
+  }
+  if (shouldStopImmediately) {
+    setWheels(0, 0);
+  }
   resetPidForState(newState);
 
   if (reason) {
@@ -242,7 +283,7 @@ bool handleRecover(const Sense& s, State followState, int basePwm, int travelDir
 }
 
 void handleEndpointLimitReached() {
-  changeState(DONE, F("Endpoint limit reached"));
+  changeState(PRE_DONE, F("Endpoint limit reached"));
 }
 
 void onEndpointEncountered() {
@@ -357,6 +398,15 @@ void loop() {
 
     case UTURN: {
       handleUTurn();
+      break;
+    }
+
+    case PRE_DONE: {
+      if (preDoneTimer.elapsed() >= PRE_DONE_DURATION_MS) {
+        changeState(DONE, F("Pre-done complete"));
+      } else {
+        setWheels(preDoneLeftPwm, preDoneRightPwm);
+      }
       break;
     }
 
