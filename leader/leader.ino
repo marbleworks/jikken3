@@ -169,10 +169,10 @@ void handleUTurn() {
 
 void updateLastBlackDirState(const Sense& s) {
   if (s.anyBlackFront) {
-    lastBlackDirState = s.frontBlackDirState;
+    lastBlackDirState = getBlackDirState(s, SensorPosition::Front);
     lastBlackSensorPosition = SensorPosition::Front;
   } else if (s.anyBlackRear) {
-    lastBlackDirState = s.rearBlackDirState;
+    lastBlackDirState = getBlackDirState(s, SensorPosition::Rear);
     lastBlackSensorPosition = SensorPosition::Rear;
   }
 }

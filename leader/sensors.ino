@@ -53,8 +53,8 @@ Sense readSensors() {
   s.allBlack = s.allBlackFront && s.allBlackRear;
   s.allWhite = s.allWhiteFront && s.allWhiteRear;
 
-  s.frontBlackDirState = getFrontBlackDirState(s);
-  s.rearBlackDirState = getRearBlackDirState(s);
+  s.frontBlackDirState = computeFrontBlackDirState(s);
+  s.rearBlackDirState = computeRearBlackDirState(s);
   if (s.anyBlackFront) {
     s.lastBlackSensorPosition = SensorPosition::Front;
   } else if (s.anyBlackRear) {
@@ -72,7 +72,7 @@ Sense readSensors() {
   return s;
 }
 
-int getFrontBlackDirState(const Sense& s) {
+int computeFrontBlackDirState(const Sense& s) {
   if (s.isBlackL && !s.isBlackR) {
     return -1;
   }
@@ -85,7 +85,7 @@ int getFrontBlackDirState(const Sense& s) {
   return 0;
 }
 
-int getRearBlackDirState(const Sense& s) {
+int computeRearBlackDirState(const Sense& s) {
   if (s.isBlackRL && !s.isBlackRR) {
     return -1;
   }
@@ -94,6 +94,16 @@ int getRearBlackDirState(const Sense& s) {
   }
   if (s.allBlackRear) {
     return 0;
+  }
+  return 0;
+}
+
+int getBlackDirState(const Sense& s, SensorPosition position) {
+  switch (position) {
+    case SensorPosition::Front:
+      return s.frontBlackDirState;
+    case SensorPosition::Rear:
+      return s.rearBlackDirState;
   }
   return 0;
 }
