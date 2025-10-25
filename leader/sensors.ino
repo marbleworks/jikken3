@@ -108,6 +108,36 @@ int getBlackDirState(const Sense& s, SensorPosition position) {
   return 0;
 }
 
+bool getAnyBlack(Sense& s, SensorPosition position) {
+  switch (position) {
+    case SensorPosition::Front:
+      return s.anyBlackFront;
+    case SensorPosition::Rear:
+      return s.anyBlackRear;
+  }
+  return false;
+}
+
+bool getAllBlack(Sense& s, SensorPosition position) {
+  switch (position) {
+    case SensorPosition::Front:
+      return s.allBlackFront;
+    case SensorPosition::Rear:
+      return s.allBlackRear;
+  }
+  return false;
+}
+
+bool getAllWhite(Sense& s, SensorPosition position) {
+  switch (position) {
+    case SensorPosition::Front:
+      return s.allWhiteFront;
+    case SensorPosition::Rear:
+      return s.allWhiteRear;
+  }
+  return false;
+}
+
 float computeError(int rawL, int rawC, int rawR) {
   static float lastErr = 0.0f;
 

@@ -36,5 +36,8 @@ Sense readSensors();
 int computeFrontBlackDirState(const Sense& s);
 int computeRearBlackDirState(const Sense& s);
 int getBlackDirState(const Sense& s, SensorPosition position);
+bool getAnyBlack(Sense& s, SensorPosition position);
+bool getAllBlack(Sense& s, SensorPosition position);
+bool getAllWhite(Sense& s, SensorPosition position);
 float computeError(int rawL, int rawC, int rawR);
 
