@@ -78,6 +78,20 @@ const __FlashStringHelper* stateLabel(State s) {
   }
 }
 
+void resetPidState(PIDState& pid) {
+  pid.integral = 0.0f;
+  pid.lastError = 0.0f;
+  pid.lastTimeMs = 0;
+}
+
+void resetPidForState(State followState) {
+  if (followState == FOLLOW_FWD) {
+    resetPidState(pidForward);
+  } else if (followState == FOLLOW_BACK) {
+    resetPidState(pidBackward);
+  }
+}
+
 void changeState(State newState,
                  const __FlashStringHelper* reason = nullptr) {
   if (state == newState) {
@@ -136,20 +150,6 @@ void handleUTurn() {
 void updateLastBlackDirState(const Sense& s) {
   if (s.anyBlack) {
     lastBlackDirState = getBlackDirState(s);
-  }
-}
-
-void resetPidState(PIDState& pid) {
-  pid.integral = 0.0f;
-  pid.lastError = 0.0f;
-  pid.lastTimeMs = 0;
-}
-
-void resetPidForState(State followState) {
-  if (followState == FOLLOW_FWD) {
-    resetPidState(pidForward);
-  } else if (followState == FOLLOW_BACK) {
-    resetPidState(pidBackward);
   }
 }
 
