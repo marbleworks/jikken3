@@ -8,8 +8,8 @@
 // ------------------ チューニング用パラメータ ------------------
 int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
 int   HYST           = 40;    // ヒステリシス
-int   BASE_FWD       = 100;   // 前進の基準PWM
-int   BASE_BACK      = 100;   // 後退の基準PWM
+int   BASE_FWD       = 120;   // 前進の基準PWM
+int   BASE_BACK      = 120;   // 後退の基準PWM
 float KP_FWD         = 0.2f;  // 前進Pゲイン
 float KP_BACK        = 0.05f;  // 後退Pゲイン
 float KI_FWD         = 0.05f;  // 前進Iゲイン
@@ -23,14 +23,14 @@ float LINE_EPS       = 1e-3f;   // 全白判定のしきい値
 int   MAX_PWM        = 255;   // PWM上限
 int   MIN_PWM        = 0;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
-unsigned long LOST_MS_RECIP      = 200; // Reciprocalモードの見失い判定時間
+unsigned long LOST_MS_RECIP      = 300; // Reciprocalモードの見失い判定時間
 unsigned long LOST_MS_UTURN      = 50; // UTurnモードの見失い判定時間
 unsigned long LOST_MS_LOOP       = 100; // Loopモードの見失い判定時間
 unsigned int ENDPOINT_DONE_COUNT = 2; // 端点遭遇回数の上限 (0 で無効)
 int   REC_STEER      = 128;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED_LEFT  = 90;   // Uターン時の左輪PWM（正で前進）
 int   UTURN_SPEED_RIGHT = -130;  // Uターン時の右輪PWM（正で前進）
-unsigned long UTURN_TIME_MS = 900; // 180度回頭に掛ける時間（要調整）
+unsigned long UTURN_TIME_MS = 810; // 180度回頭に掛ける時間（要調整）
 unsigned long PRE_DONE_DURATION_MS = 100; // PRE_DONE時間（DONEの前に前進or後退）
 // ----------------------------------------------------------------
 
