@@ -122,6 +122,7 @@ bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   
   return found;
 }
+
 FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   FollowResult res { false };
 
