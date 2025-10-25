@@ -168,7 +168,8 @@ void handleUTurn() {
 bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   int speed = speedSign * SEEK_SPEED;
   setWheels(speed, speed);
-  bool found = s.anyBlack;
+  SensorPosition position = directionToSensorPosition(speedSign);
+  bool found = getAnyBlack(s, position);
   if (found) {
     const __FlashStringHelper* reason =
       (followState == FOLLOW_FWD) ? F("Line found (forward)") : F("Line found (backward)");

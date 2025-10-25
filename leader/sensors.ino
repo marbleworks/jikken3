@@ -121,7 +121,7 @@ int getLastBlackDirState(const Sense& s, SensorPosition position) {
   return 0;
 }
 
-bool getAnyBlack(Sense& s, SensorPosition position) {
+bool getAnyBlack(const Sense& s, SensorPosition position) {
   switch (position) {
     case SensorPosition::Front:
       return s.anyBlackFront;
@@ -131,7 +131,7 @@ bool getAnyBlack(Sense& s, SensorPosition position) {
   return false;
 }
 
-bool getAllBlack(Sense& s, SensorPosition position) {
+bool getAllBlack(const Sense& s, SensorPosition position) {
   switch (position) {
     case SensorPosition::Front:
       return s.allBlackFront;
@@ -141,7 +141,7 @@ bool getAllBlack(Sense& s, SensorPosition position) {
   return false;
 }
 
-bool getAllWhite(Sense& s, SensorPosition position) {
+bool getAllWhite(const Sense& s, SensorPosition position) {
   switch (position) {
     case SensorPosition::Front:
       return s.allWhiteFront;
