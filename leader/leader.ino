@@ -262,7 +262,13 @@ bool handleRecover(const Sense& s, State followState, int basePwm, int travelDir
 bool onEndpointEncountered() {
   ++endpointCount;
   if (ENDPOINT_DONE_COUNT > 0 && endpointCount >= ENDPOINT_DONE_COUNT) {
-    changeState(PRE_DONE, F("Endpoint limit reached"));
+    if (prevState == FOLLOW_FWD) {
+      changeState(PRE_DONE, F("Endpoint limit reached"));
+    }
+    else {
+      changeState(DONE, F("Endpoint limit reached"));
+    }
+
     return true;
   }
 
@@ -309,13 +315,8 @@ void handleBackwardLineLost() {
 
 void handlePreDone() {
   if (!handlePreDoneTimer()) {
-    switch (prevState) {
-    case FOLLOW_FWD:
+    if (prevState == FOLLOW_FWD) {
       setWheels(BASE_FWD, BASE_FWD);
-      break;
-    case FOLLOW_BACK:
-      setWheels(-BASE_BACK, -BASE_BACK);
-      break;
     }
 
     return;
