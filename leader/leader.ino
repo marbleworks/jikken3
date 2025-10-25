@@ -23,7 +23,10 @@ float LINE_EPS       = 1e-3f;   // 全白判定のしきい値
 int   MAX_PWM        = 255;   // PWM上限
 int   MIN_PWM        = 0;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
-unsigned long LOST_MS      = 100; // 見失い判定（FOLLOW中に全白がこの時間続いたらリカバリ）
+unsigned long LOST_MS_RECIP = 100; // Reciprocal モードの見失い判定
+unsigned long LOST_MS_UTURN = 100; // UTurn モードの見失い判定
+unsigned long LOST_MS_LOOP  = 100; // Loop モードの見失い判定
+unsigned long LOST_MS       = 100; // 現在モードの見失い判定（自動設定）
 unsigned int ENDPOINT_DONE_COUNT = 2; // 端点遭遇回数の上限 (0 で無効)
 int   REC_STEER      = 128;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED_LEFT  = 90;   // Uターン時の左輪PWM（正で前進）
@@ -68,6 +71,23 @@ Timer lineLostTimer;
 int lastBlackDirState = 0;           // -1=左, +1=右, 0=中央/不明
 Timer uturnTimer;
 Timer preDoneTimer;
+
+unsigned long lostMsForMode(RunMode mode) {
+  switch (mode) {
+    case RUNMODE_RECIP:
+      return LOST_MS_RECIP;
+    case RUNMODE_UTURN:
+      return LOST_MS_UTURN;
+    case RUNMODE_LOOP:
+      return LOST_MS_LOOP;
+    default:
+      return LOST_MS_RECIP;
+  }
+}
+
+void applyRunModeParameters() {
+  LOST_MS = lostMsForMode(runMode);
+}
 
 const __FlashStringHelper* stateLabel(State s) {
   switch (s) {
@@ -343,6 +363,7 @@ void setup() {
   Serial.begin(115200);
   runMode = COMPILE_TIME_RUNMODE;
   applyPotRunMode();
+  applyRunModeParameters();
   setupWheelPins();
   pinMode(LED_WARN, OUTPUT);
   setupSensorLeds();
