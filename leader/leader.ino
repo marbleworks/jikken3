@@ -182,7 +182,10 @@ bool handleSeekLine(State followState, int speedSign, const Sense& s) {
 FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   FollowResult res { false };
 
-  if (handleLineLostTimer(s.allWhite)) {
+  SensorPosition position = directionToSensorPosition(travelDir);
+  bool allWhite = getAllWhite(s, position);
+
+  if (handleLineLostTimer(allWhite)) {
     res.lineLost = true;
     resetPidState(pid);
     return res;
@@ -202,7 +205,7 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   pid.lastTimeMs = now;
 
   float derivative = 0.0f;
-  if (!s.allWhite && dt > 0.0f) {
+  if (!allWhite && dt > 0.0f) {
     pid.integral += e * dt;
     pid.integral = constrain(pid.integral, -PID_I_LIMIT, PID_I_LIMIT);
     derivative = (e - pid.lastError) / dt;
