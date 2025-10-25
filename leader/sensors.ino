@@ -62,7 +62,7 @@ Sense readSensors() {
   return s;
 }
 
-int getBlackDirState(const Sense& s) {
+int getFrontBlackDirState(const Sense& s) {
   if (s.isBlackL && !s.isBlackR) {
     return -1;
   }
