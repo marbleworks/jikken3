@@ -5,27 +5,29 @@
 #include "timer.h"
 #include "run_mode.h"
 
+#include <math.h>
+
 // ------------------ チューニング用パラメータ ------------------
 int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
 int   HYST           = 40;    // ヒステリシス
-int   BASE_FWD       = 120;   // 前進の基準PWM
-int   BASE_BACK      = 120;   // 後退の基準PWM
-float KP_FWD         = 0.2f;  // 前進Pゲイン
+int   BASE_FWD       = 70;   // 前進の基準PWM
+int   BASE_BACK      = 70;   // 後退の基準PWM
+float KP_FWD         = 0.15f;  // 前進Pゲイン
 float KP_BACK        = 0.05f;  // 後退Pゲイン
 float KI_FWD         = 0.05f;  // 前進Iゲイン
 float KI_BACK        = 0.0125f;  // 後退Iゲイン
-float KD_FWD         = 0.05f;  // 前進Dゲイン
+float KD_FWD         = 0.01f;  // 前進Dゲイン
 float KD_BACK        = 0.0125f;  // 後退Dゲイン
 float PID_I_LIMIT    = 1.0f;  // I項アンチワインドアップ上限
 float LINE_WHITE     = 40.0f;   // センサ白レベル
 float LINE_BLACK     = 900.0f;  // センサ黒レベル
 float LINE_EPS       = 1e-3f;   // 全白判定のしきい値
-int   MAX_PWM        = 255;   // PWM上限
+int   MAX_PWM        = 150;   // PWM上限
 int   MIN_PWM        = 0;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
 unsigned long LOST_MS_RECIP      = 300; // Reciprocalモードの見失い判定時間
 unsigned long LOST_MS_UTURN      = 50; // UTurnモードの見失い判定時間
-unsigned long LOST_MS_LOOP       = 100; // Loopモードの見失い判定時間
+unsigned long LOST_MS_LOOP       = 500; // Loopモードの見失い判定時間
 unsigned int ENDPOINT_DONE_COUNT = 2; // 端点遭遇回数の上限 (0 で無効)
 int   REC_STEER      = 128;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED_LEFT  = 90;   // Uターン時の左輪PWM（正で前進）
@@ -206,8 +208,8 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
               ? computeError(s.rawL, s.rawC, s.rawR)
               : computeError(s.rawRL, 0, s.rawRR);
   if (allWhite) {
-    // e = pid.lastError;
-    e = 0;
+    e = pid.lastError;
+    // e = 0;
   }
   float kp = (travelDir > 0) ? KP_FWD : KP_BACK;
   float ki = (travelDir > 0) ? KI_FWD : KI_BACK;
@@ -237,6 +239,12 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   int left  = constrain(base + corr, MIN_PWM, MAX_PWM) * dirSign;
   int right = constrain(base - corr, MIN_PWM, MAX_PWM) * dirSign;
   setWheels(left, right);
+  Serial.print(" FOLLOW_FWD");
+  Serial.print(" dt="); Serial.print(dt, 4);
+  Serial.print(" e="); Serial.print(e, 3);
+  Serial.print(" d="); Serial.print(derivative, 1);
+  Serial.print(" corr="); Serial.print(corr);
+  Serial.print(" -> "); Serial.print(left); Serial.print(", "); Serial.println(right);
 
   return res;
 }
