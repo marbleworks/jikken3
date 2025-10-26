@@ -12,6 +12,8 @@ int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調�
 int   HYST           = 40;    // ヒステリシス
 int   BASE_FWD       = 70;   // 前進の基準PWM
 int   BASE_BACK      = 70;   // 後退の基準PWM
+int   BASE_MIN_SPEED = 30;   // カーブ時に減速する際の下限PWM
+int   CURVE_SLOWDOWN_MAX = 40; // カーブ時の最大減速量
 float KP_FWD         = 0.15f;  // 前進Pゲイン
 float KP_BACK        = 0.05f;  // 後退Pゲイン
 float KI_FWD         = 0.05f;  // 前進Iゲイン
@@ -215,6 +217,8 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   float ki = (travelDir > 0) ? KI_FWD : KI_BACK;
   float kd = (travelDir > 0) ? KD_FWD : KD_BACK;
   int base = (travelDir > 0) ? BASE_FWD : BASE_BACK;
+  int slowdown = (int)(CURVE_SLOWDOWN_MAX * fabs(e));
+  base = max(base - slowdown, BASE_MIN_SPEED);
 
   unsigned long now = millis();
   float dt = 0.0f;
