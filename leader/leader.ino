@@ -12,8 +12,9 @@ int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調�
 int   HYST           = 40;    // ヒステリシス
 int   BASE_FWD       = 70;   // 前進の基準PWM
 int   BASE_BACK      = 70;   // 後退の基準PWM
-int   BASE_MIN_SPEED = 30;   // カーブ時に減速する際の下限PWM
-int   CURVE_SLOWDOWN_MAX = 40; // カーブ時の最大減速量
+int   BASE_MIN_SPEED = 40;   // カーブ時に減速する際の下限PWM
+float CURVE_SLOW_K1  = 0.6f; // e に対する減速係数
+float CURVE_SLOW_K2  = 2.0f; // d に対する減速係数
 float KP_FWD         = 0.15f;  // 前進Pゲイン
 float KP_BACK        = 0.05f;  // 後退Pゲイン
 float KI_FWD         = 0.05f;  // 前進Iゲイン
@@ -216,10 +217,6 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   float kp = (travelDir > 0) ? KP_FWD : KP_BACK;
   float ki = (travelDir > 0) ? KI_FWD : KI_BACK;
   float kd = (travelDir > 0) ? KD_FWD : KD_BACK;
-  int base = (travelDir > 0) ? BASE_FWD : BASE_BACK;
-  int slowdown = (int)(CURVE_SLOWDOWN_MAX * fabs(e));
-  base = max(base - slowdown, BASE_MIN_SPEED);
-
   unsigned long now = millis();
   float dt = 0.0f;
   if (pid.lastTimeMs != 0) {
@@ -234,6 +231,14 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
     derivative = (e - pid.lastError) / dt;
   }
   pid.lastError = e;
+
+  int base = (travelDir > 0) ? BASE_FWD : BASE_BACK;
+  int baseMax = base;
+  int baseMin = BASE_MIN_SPEED;
+  float ae = fabsf(e);
+  float ad = fabsf(derivative);
+  int reduce = (int)(CURVE_SLOW_K1 * ae * 100.0f + CURVE_SLOW_K2 * ad);
+  base = constrain(baseMax - reduce, baseMin, baseMax);
 
   float output = kp * e + ki * pid.integral + kd * derivative;
   int corr = (int)(output * 255.0f);
