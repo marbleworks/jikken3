@@ -181,7 +181,7 @@ void handleUTurn() {
 bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   int speed = speedSign * SEEK_SPEED;
   setWheels(speed, speed);
-  SensorPosition position = directionToSensorPosition(speedSign);
+  SensorPosition position = directionToSensorPosition(speedSign, s.mode);
   bool found = getAnyBlack(s, position);
   if (found) {
     const __FlashStringHelper* reason =
@@ -195,7 +195,7 @@ bool handleSeekLine(State followState, int speedSign, const Sense& s) {
 FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   FollowResult res { false };
 
-  SensorPosition position = directionToSensorPosition(travelDir);
+  SensorPosition position = directionToSensorPosition(travelDir, s.mode);
   bool allWhite = getAllWhite(s, position);
 
   if (handleLineLostTimer(allWhite, getLostMsForMode(runMode))) {
@@ -204,12 +204,14 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
     return res;
   }
 
-  float e = (position == SensorPosition::Front)
-              ? computeError(s.rawL, s.rawC, s.rawR)
-              : computeError(s.rawRL, 0, s.rawRR);
-  if (allWhite) {
-    e = pid.lastError;
-    // e = 0;
+  bool disableSteering = (travelDir < 0) && (s.mode == SensorMode::Front5);
+
+  float e = 0.0f;
+  if (!disableSteering) {
+    e = computeError(s, position);
+    if (allWhite) {
+      e = pid.lastError;
+    }
   }
   float kp = (travelDir > 0) ? KP_FWD : KP_BACK;
   float ki = (travelDir > 0) ? KI_FWD : KI_BACK;
@@ -224,14 +226,16 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   pid.lastTimeMs = now;
 
   float derivative = 0.0f;
-  if (!allWhite && dt > 0.0f) {
+  if (!disableSteering && !allWhite && dt > 0.0f) {
     pid.integral += e * dt;
     pid.integral = constrain(pid.integral, -PID_I_LIMIT, PID_I_LIMIT);
     derivative = (e - pid.lastError) / dt;
+  } else if (disableSteering) {
+    pid.integral = 0.0f;
   }
-  pid.lastError = e;
+  pid.lastError = disableSteering ? 0.0f : e;
 
-  float output = kp * e + ki * pid.integral + kd * derivative;
+  float output = disableSteering ? 0.0f : (kp * e + ki * pid.integral + kd * derivative);
   int corr = (int)(output * 255.0f);
 
   int dirSign    = (travelDir >= 0) ? 1 : -1;
@@ -252,8 +256,14 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
 void recoverLine(const Sense& s, int basePwm, int travelDir) {
   int dirSign = (travelDir >= 0) ? 1 : -1;
 
+  if (travelDir < 0 && s.mode == SensorMode::Front5) {
+    int speed = constrain(basePwm, MIN_PWM, MAX_PWM) * dirSign;
+    setWheels(speed, speed);
+    return;
+  }
+
   int steerOffset;
-  int lastDir = getLastBlackDirState(s, directionToSensorPosition(travelDir));
+  int lastDir = getLastBlackDirState(s, directionToSensorPosition(travelDir, s.mode));
   if (lastDir > 0) {
     steerOffset = REC_STEER;
   } else if (lastDir < 0) {
@@ -270,7 +280,7 @@ void recoverLine(const Sense& s, int basePwm, int travelDir) {
 }
 
 bool handleRecover(const Sense& s, State followState, int basePwm, int travelDir) {
-  SensorPosition position = directionToSensorPosition(travelDir);
+  SensorPosition position = directionToSensorPosition(travelDir, s.mode);
   bool recovered = getAnyBlack(s, position);
   if (recovered) {
     const __FlashStringHelper* reason =

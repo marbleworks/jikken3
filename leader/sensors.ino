@@ -1,6 +1,7 @@
 #include "sensors.h"
 
 #include "pins.h"
+#include "run_mode.h"
 #include "sensor_leds.h"
 
 extern int THRESHOLD;
@@ -9,93 +10,211 @@ extern float LINE_WHITE;
 extern float LINE_BLACK;
 extern float LINE_EPS;
 
-static bool applyHysteresis(int raw, bool lastState, int thH, int thL) {
+extern RunMode runMode;
+
+namespace {
+
+constexpr uint8_t FRONT5_SENSOR_PINS[Sense::MAX_FRONT_SENSORS] = {A3, A0, A1, A2, A4};
+constexpr uint8_t FRONT3_SENSOR_PINS[3] = {A0, A1, A2};
+constexpr uint8_t REAR2_SENSOR_PINS[Sense::MAX_REAR_SENSORS] = {A3, A4};
+
+SensorMode determineSensorMode() {
+  return (runMode == RUNMODE_LOOP) ? SensorMode::Front5 : SensorMode::Front3Rear2;
+}
+
+bool applyHysteresis(int raw, bool lastState, int thH, int thL) {
   return lastState ? (raw > thL) : (raw > thH);
 }
 
+template <size_t N>
+void clearArray(bool (&arr)[N]) {
+  for (size_t i = 0; i < N; ++i) {
+    arr[i] = false;
+  }
+}
+
+template <size_t N>
+void clearArray(int (&arr)[N]) {
+  for (size_t i = 0; i < N; ++i) {
+    arr[i] = 0;
+  }
+}
+
+}  // namespace
+
 Sense readSensors() {
   Sense s{};
-  s.rawL = analogRead(pinL);
-  s.rawC = analogRead(pinC);
-  s.rawR = analogRead(pinR);
-  s.rawRL = analogRead(pinRL);
-  s.rawRR = analogRead(pinRR);
+  s.mode = determineSensorMode();
+  s.frontCount = (s.mode == SensorMode::Front5) ? 5 : 3;
+  s.rearCount = (s.mode == SensorMode::Front5) ? 0 : 2;
 
-  static bool lastLBlack = false;
-  static bool lastCBlack = false;
-  static bool lastRBlack = false;
-  static bool lastRLBlack = false;
-  static bool lastRRBlack = false;
+  static bool lastFrontBlack[Sense::MAX_FRONT_SENSORS] = {};
+  static bool lastRearBlack[Sense::MAX_REAR_SENSORS] = {};
+  static SensorMode lastMode = SensorMode::Front3Rear2;
   static int lastFrontDirState = 0;
   static int lastRearDirState = 0;
+
+  if (lastMode != s.mode) {
+    clearArray(lastFrontBlack);
+    clearArray(lastRearBlack);
+    lastFrontDirState = 0;
+    lastRearDirState = 0;
+    lastMode = s.mode;
+  }
+
+  const uint8_t* frontPins = (s.mode == SensorMode::Front5) ? FRONT5_SENSOR_PINS : FRONT3_SENSOR_PINS;
+  for (size_t i = 0; i < s.frontCount; ++i) {
+    s.rawFront[i] = analogRead(frontPins[i]);
+  }
+  for (size_t i = s.frontCount; i < Sense::MAX_FRONT_SENSORS; ++i) {
+    s.rawFront[i] = 0;
+  }
+
+  const uint8_t* rearPins = REAR2_SENSOR_PINS;
+  for (size_t i = 0; i < s.rearCount; ++i) {
+    s.rawRear[i] = analogRead(rearPins[i]);
+  }
+  for (size_t i = s.rearCount; i < Sense::MAX_REAR_SENSORS; ++i) {
+    s.rawRear[i] = 0;
+  }
+
   int thH = THRESHOLD + HYST;
   int thL = THRESHOLD - HYST;
 
-  s.isBlackL = applyHysteresis(s.rawL, lastLBlack, thH, thL);
-  s.isBlackC = applyHysteresis(s.rawC, lastCBlack, thH, thL);
-  s.isBlackR = applyHysteresis(s.rawR, lastRBlack, thH, thL);
-  s.isBlackRL = applyHysteresis(s.rawRL, lastRLBlack, thH, thL);
-  s.isBlackRR = applyHysteresis(s.rawRR, lastRRBlack, thH, thL);
+  for (size_t i = 0; i < s.frontCount; ++i) {
+    s.isBlackFront[i] = applyHysteresis(s.rawFront[i], lastFrontBlack[i], thH, thL);
+    lastFrontBlack[i] = s.isBlackFront[i];
+  }
+  for (size_t i = s.frontCount; i < Sense::MAX_FRONT_SENSORS; ++i) {
+    s.isBlackFront[i] = false;
+    lastFrontBlack[i] = false;
+  }
 
-  lastLBlack = s.isBlackL;
-  lastCBlack = s.isBlackC;
-  lastRBlack = s.isBlackR;
-  lastRLBlack = s.isBlackRL;
-  lastRRBlack = s.isBlackRR;
+  for (size_t i = 0; i < s.rearCount; ++i) {
+    s.isBlackRear[i] = applyHysteresis(s.rawRear[i], lastRearBlack[i], thH, thL);
+    lastRearBlack[i] = s.isBlackRear[i];
+  }
+  for (size_t i = s.rearCount; i < Sense::MAX_REAR_SENSORS; ++i) {
+    s.isBlackRear[i] = false;
+    lastRearBlack[i] = false;
+  }
 
-  s.anyBlackFront = s.isBlackL || s.isBlackC || s.isBlackR;
-  s.allBlackFront = s.isBlackL && s.isBlackC && s.isBlackR;
+  s.anyBlackFront = false;
+  s.allBlackFront = (s.frontCount > 0);
+  for (size_t i = 0; i < s.frontCount; ++i) {
+    if (s.isBlackFront[i]) {
+      s.anyBlackFront = true;
+    } else {
+      s.allBlackFront = false;
+    }
+  }
   s.allWhiteFront = !s.anyBlackFront;
 
-  s.anyBlackRear = s.isBlackRL || s.isBlackRR;
-  s.allBlackRear = s.isBlackRL && s.isBlackRR;
-  s.allWhiteRear = !s.anyBlackRear;
+  if (s.rearCount == 0) {
+    s.anyBlackRear = false;
+    s.allBlackRear = false;
+    s.allWhiteRear = true;
+  } else {
+    s.anyBlackRear = false;
+    s.allBlackRear = true;
+    for (size_t i = 0; i < s.rearCount; ++i) {
+      if (s.isBlackRear[i]) {
+        s.anyBlackRear = true;
+      } else {
+        s.allBlackRear = false;
+      }
+    }
+    s.allWhiteRear = !s.anyBlackRear;
+  }
 
   s.anyBlack = s.anyBlackFront || s.anyBlackRear;
-  s.allBlack = s.allBlackFront && s.allBlackRear;
-  s.allWhite = s.allWhiteFront && s.allWhiteRear;
+  bool rearAllBlackForAll = (s.rearCount == 0) ? true : s.allBlackRear;
+  bool rearAllWhiteForAll = (s.rearCount == 0) ? true : s.allWhiteRear;
+  s.allBlack = s.allBlackFront && rearAllBlackForAll;
+  s.allWhite = s.allWhiteFront && rearAllWhiteForAll;
 
   s.frontBlackDirState = computeFrontBlackDirState(s);
   s.rearBlackDirState = computeRearBlackDirState(s);
   if (s.anyBlackFront) {
     lastFrontDirState = s.frontBlackDirState;
   }
-  if (s.anyBlackRear) {
+  if (s.rearCount > 0 && s.anyBlackRear) {
     lastRearDirState = s.rearBlackDirState;
+  } else if (s.rearCount == 0) {
+    lastRearDirState = 0;
   }
   s.lastBlackStateFront = lastFrontDirState;
   s.lastBlackDirStateRear = lastRearDirState;
 
-  displaySensorStates(s.isBlackL,
-                      s.isBlackC,
-                      s.isBlackR,
-                      s.isBlackRL,
-                      s.isBlackRR);
+  if (s.mode == SensorMode::Front5) {
+    bool f1 = (s.frontCount > 0) ? s.isBlackFront[0] : false;
+    bool f2 = (s.frontCount > 1) ? s.isBlackFront[1] : false;
+    bool f3 = (s.frontCount > 2) ? s.isBlackFront[2] : false;
+    bool f4 = (s.frontCount > 3) ? s.isBlackFront[3] : false;
+    bool f5 = (s.frontCount > 4) ? s.isBlackFront[4] : false;
+    displaySensorStates(f1, f3, f5, f2, f4);
+  } else {
+    bool frontL = (s.frontCount > 0) ? s.isBlackFront[0] : false;
+    bool frontC = (s.frontCount > 1) ? s.isBlackFront[1] : false;
+    bool frontR = (s.frontCount > 2) ? s.isBlackFront[2] : false;
+    bool rearL = (s.rearCount > 0) ? s.isBlackRear[0] : false;
+    bool rearR = (s.rearCount > 1) ? s.isBlackRear[1] : false;
+    displaySensorStates(frontL, frontC, frontR, rearL, rearR);
+  }
 
   return s;
 }
 
 int computeFrontBlackDirState(const Sense& s) {
-  if (s.isBlackL && !s.isBlackR) {
+  if (s.frontCount == 0) {
+    return 0;
+  }
+
+  bool left = false;
+  bool right = false;
+  bool center = false;
+  size_t mid = s.frontCount / 2;
+
+  for (size_t i = 0; i < s.frontCount; ++i) {
+    if (!s.isBlackFront[i]) {
+      continue;
+    }
+    if (i < mid) {
+      left = true;
+    } else if (i > mid) {
+      right = true;
+    } else {
+      center = true;
+    }
+  }
+
+  if (left && !right) {
     return -1;
   }
-  if (s.isBlackR && !s.isBlackL) {
+  if (right && !left) {
     return +1;
   }
-  if (s.isBlackC || s.allBlackFront) {
+  if (center || (left && right)) {
     return 0;
   }
   return 0;
 }
 
 int computeRearBlackDirState(const Sense& s) {
-  if (s.isBlackRL && !s.isBlackRR) {
+  if (s.rearCount == 0) {
+    return 0;
+  }
+
+  bool left = (s.rearCount > 0) ? s.isBlackRear[0] : false;
+  bool right = (s.rearCount > 1) ? s.isBlackRear[1] : false;
+
+  if (left && !right) {
     return -1;
   }
-  if (s.isBlackRR && !s.isBlackRL) {
+  if (right && !left) {
     return +1;
   }
-  if (s.allBlackRear) {
+  if ((left && right) || (!left && !right)) {
     return 0;
   }
   return 0;
@@ -124,9 +243,19 @@ int getLastBlackDirState(const Sense& s, SensorPosition position) {
 bool getAnyBlack(const Sense& s, SensorPosition position) {
   switch (position) {
     case SensorPosition::Front:
-      return s.anyBlackFront;
+      for (size_t i = 0; i < s.frontCount; ++i) {
+        if (s.isBlackFront[i]) {
+          return true;
+        }
+      }
+      return false;
     case SensorPosition::Rear:
-      return s.anyBlackRear;
+      for (size_t i = 0; i < s.rearCount; ++i) {
+        if (s.isBlackRear[i]) {
+          return true;
+        }
+      }
+      return false;
   }
   return false;
 }
@@ -136,6 +265,9 @@ bool getAllBlack(const Sense& s, SensorPosition position) {
     case SensorPosition::Front:
       return s.allBlackFront;
     case SensorPosition::Rear:
+      if (s.rearCount == 0) {
+        return false;
+      }
       return s.allBlackRear;
   }
   return false;
@@ -146,14 +278,15 @@ bool getAllWhite(const Sense& s, SensorPosition position) {
     case SensorPosition::Front:
       return s.allWhiteFront;
     case SensorPosition::Rear:
+      if (s.rearCount == 0) {
+        return true;
+      }
       return s.allWhiteRear;
   }
   return false;
 }
 
-float computeError(int rawL, int rawC, int rawR) {
-  static float lastErr = 0.0f;
-
+float computeError(const Sense& s, SensorPosition position) {
   auto norm = [&](int v) -> float {
     float x = (v - LINE_WHITE) / (LINE_BLACK - LINE_WHITE);
     if (x < 0.0f) x = 0.0f;
@@ -161,27 +294,60 @@ float computeError(int rawL, int rawC, int rawR) {
     return x;
   };
 
-  float bL = norm(rawL);
-  float bC = norm(rawC);
-  float bR = norm(rawR);
+  static float lastFrontErr = 0.0f;
+  static float lastRearErr = 0.0f;
 
-  float sum = bL + bC + bR;
-  if (sum < LINE_EPS) {
-    return lastErr;
+  if (position == SensorPosition::Front) {
+    if (s.frontCount == 0) {
+      return lastFrontErr;
+    }
+
+    float weights3[3] = {-1.0f, 0.0f, 1.0f};
+    float weights5[5] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
+
+    const float* weights = (s.frontCount == 5) ? weights5 : weights3;
+    float sum = 0.0f;
+    float weighted = 0.0f;
+    for (size_t i = 0; i < s.frontCount; ++i) {
+      float b = norm(s.rawFront[i]);
+      sum += b;
+      weighted += b * weights[i];
+    }
+    if (sum < LINE_EPS) {
+      return lastFrontErr;
+    }
+    float err = weighted / sum;
+    lastFrontErr = err;
+    return err;
   }
 
-  float err = (-1.0f * bL + 1.0f * bR) / sum;
+  if (s.rearCount == 0) {
+    lastRearErr = 0.0f;
+    return lastRearErr;
+  }
 
-  lastErr = err;
+  float sum = 0.0f;
+  float weighted = 0.0f;
+  static const float weightsRear[Sense::MAX_REAR_SENSORS] = {-1.0f, 1.0f};
+  for (size_t i = 0; i < s.rearCount; ++i) {
+    float b = norm(s.rawRear[i]);
+    sum += b;
+    weighted += b * weightsRear[i];
+  }
+  if (sum < LINE_EPS) {
+    return lastRearErr;
+  }
+  float err = weighted / sum;
+  lastRearErr = err;
   return err;
 }
 
-SensorPosition directionToSensorPosition(int direction) {
-  if (direction == 1) {
+SensorPosition directionToSensorPosition(int direction, SensorMode mode) {
+  if (direction >= 0) {
     return SensorPosition::Front;
   }
-  if (direction == -1) {
-    return SensorPosition::Rear;
+  if (mode == SensorMode::Front5) {
+    return SensorPosition::Front;
   }
-  return SensorPosition::Front;
+  return SensorPosition::Rear;
 }
