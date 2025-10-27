@@ -17,12 +17,16 @@ int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調�
 int   HYST           = 40;    // ヒステリシス
 int   BASE_FWD       = 70;   // 前進の基準PWM
 int   BASE_BACK      = 70;   // 後退の基準PWM
+int   BASE_FWD_MIN   = 40;   // カーブ時に減速してもこの値以下にはしない
+int   BASE_BACK_MIN  = 40;   // 後退時の最低PWM
 float KP_FWD         = 0.15f;  // 前進Pゲイン
 float KP_BACK        = 0.05f;  // 後退Pゲイン
 float KI_FWD         = 0.05f;  // 前進Iゲイン
 float KI_BACK        = 0.0125f;  // 後退Iゲイン
 float KD_FWD         = 0.01f;  // 前進Dゲイン
 float KD_BACK        = 0.0125f;  // 後退Dゲイン
+float CURVE_E_GAIN   = 0.6f;   // 誤差に対する減速係数
+float CURVE_D_GAIN   = 2.0f;   // 変化量に対する減速係数
 float PID_I_LIMIT    = 1.0f;  // I項アンチワインドアップ上限
 float LINE_WHITE     = 40.0f;   // センサ白レベル
 float LINE_BLACK     = 900.0f;  // センサ黒レベル
@@ -221,7 +225,9 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   float kp = (travelDir > 0) ? KP_FWD : KP_BACK;
   float ki = (travelDir > 0) ? KI_FWD : KI_BACK;
   float kd = (travelDir > 0) ? KD_FWD : KD_BACK;
-  int base = (travelDir > 0) ? BASE_FWD : BASE_BACK;
+  int baseNominal = (travelDir > 0) ? BASE_FWD : BASE_BACK;
+  int baseMin = (travelDir > 0) ? BASE_FWD_MIN : BASE_BACK_MIN;
+  int base = baseNominal;
 
   unsigned long now = millis();
   float dt = 0.0f;
@@ -240,6 +246,13 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   }
   pid.lastError = disableSteering ? 0.0f : e;
 
+  if (!disableSteering) {
+    float ae = fabsf(e);
+    float ad = fabsf(derivative);
+    int reduce = (int)(CURVE_E_GAIN * ae * 100.0f + CURVE_D_GAIN * ad);
+    base = constrain(baseNominal - reduce, baseMin, baseNominal);
+  }
+
   float output = disableSteering ? 0.0f : (kp * e + ki * pid.integral + kd * derivative);
   int corr = (int)(output * 255.0f);
 
@@ -253,6 +266,7 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   Serial.print(" e="); Serial.print(e, 3);
   Serial.print(" d="); Serial.print(derivative, 1);
   Serial.print(" corr="); Serial.print(corr);
+  Serial.print(" base="); Serial.print(base);
   Serial.print(" -> "); Serial.print(left); Serial.print(", "); Serial.println(right);
 
   return res;
