@@ -7,6 +7,11 @@
 
 #include <math.h>
 
+// センサーデバッグ出力を有効化する場合は 1 に設定する。
+#ifndef SENSOR_DEBUG_PRINT
+#define SENSOR_DEBUG_PRINT 0
+#endif
+
 // ------------------ チューニング用パラメータ ------------------
 int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
 int   HYST           = 40;    // ヒステリシス
@@ -375,6 +380,9 @@ void setup() {
 
 void loop() {
   Sense s = readSensors();
+#if SENSOR_DEBUG_PRINT
+  debugPrintSensors(s);
+#endif
   switch (state) {
     // 端点(全白)から前進して黒ラインを掴む
     case SEEK_LINE_FWD: {

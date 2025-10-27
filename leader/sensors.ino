@@ -165,6 +165,36 @@ Sense readSensors() {
   return s;
 }
 
+void debugPrintSensors(const Sense& s) {
+  Serial.print(F("["));
+  Serial.print((s.mode == SensorMode::Front5) ? F("Front5") : F("Front3Rear2"));
+  Serial.print(F("] front:"));
+
+  for (size_t i = 0; i < s.frontCount; ++i) {
+    Serial.print(F(" "));
+    Serial.print(s.rawFront[i]);
+    Serial.print(s.isBlackFront[i] ? F("B") : F("W"));
+  }
+
+  Serial.print(F(" rear:"));
+  if (s.rearCount == 0) {
+    Serial.print(F(" (none)"));
+  } else {
+    for (size_t i = 0; i < s.rearCount; ++i) {
+      Serial.print(F(" "));
+      Serial.print(s.rawRear[i]);
+      Serial.print(s.isBlackRear[i] ? F("B") : F("W"));
+    }
+  }
+
+  Serial.print(F(" any="));
+  Serial.print(s.anyBlack ? F("B") : F("W"));
+  Serial.print(F(" lastF="));
+  Serial.print(s.lastBlackStateFront);
+  Serial.print(F(" lastR="));
+  Serial.println(s.lastBlackDirStateRear);
+}
+
 int computeFrontBlackDirState(const Sense& s) {
   if (s.frontCount == 0) {
     return 0;

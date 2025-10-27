@@ -50,4 +50,5 @@ bool getAllBlack(const Sense& s, SensorPosition position);
 bool getAllWhite(const Sense& s, SensorPosition position);
 float computeError(const Sense& s, SensorPosition position);
 SensorPosition directionToSensorPosition(int direction, SensorMode mode);
+void debugPrintSensors(const Sense& s);
 
