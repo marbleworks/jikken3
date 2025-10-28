@@ -15,6 +15,7 @@ int   BASE_BACK      = 70;   // 後退の基準PWM
 int   BASE_MIN_SPEED = 40;   // カーブ時に減速する際の下限PWM
 float CURVE_SLOW_K1  = 0.6f; // e に対する減速係数
 float CURVE_SLOW_K2  = 2.0f; // d に対する減速係数
+float BASE_SMOOTH_ALPHA = 0.25f; // 目標速度への追従係数（指数移動平均）
 float KP_FWD         = 0.15f;  // 前進Pゲイン
 float KP_BACK        = 0.05f;  // 後退Pゲイン
 float KI_FWD         = 0.05f;  // 前進Iゲイン
@@ -63,6 +64,7 @@ struct PIDState {
   float integral;
   float lastError;
   unsigned long lastTimeMs;
+  float currentBase;
 };
 
 PIDState pidForward{};
@@ -99,17 +101,18 @@ const __FlashStringHelper* stateLabel(State s) {
   }
 }
 
-void resetPidState(PIDState& pid) {
+void resetPidState(PIDState& pid, float initialBase) {
   pid.integral = 0.0f;
   pid.lastError = 0.0f;
   pid.lastTimeMs = 0;
+  pid.currentBase = initialBase;
 }
 
 void resetPidForState(State followState) {
   if (followState == FOLLOW_FWD) {
-    resetPidState(pidForward);
+    resetPidState(pidForward, BASE_FWD);
   } else if (followState == FOLLOW_BACK) {
-    resetPidState(pidBackward);
+    resetPidState(pidBackward, BASE_BACK);
   }
 }
 
@@ -197,13 +200,15 @@ bool handleSeekLine(State followState, int speedSign, const Sense& s) {
 
 FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   FollowResult res { false };
+  float baseMax = (travelDir > 0) ? BASE_FWD : BASE_BACK;
+  float baseMin = BASE_MIN_SPEED;
 
   SensorPosition position = directionToSensorPosition(travelDir);
   bool allWhite = getAllWhite(s, position);
 
   if (handleLineLostTimer(allWhite, getLostMsForMode(runMode))) {
     res.lineLost = true;
-    resetPidState(pid);
+    resetPidState(pid, baseMax);
     return res;
   }
 
@@ -232,13 +237,17 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   }
   pid.lastError = e;
 
-  int base = (travelDir > 0) ? BASE_FWD : BASE_BACK;
-  int baseMax = base;
-  int baseMin = BASE_MIN_SPEED;
   float ae = fabsf(e);
   float ad = fabsf(derivative);
   int reduce = (int)(CURVE_SLOW_K1 * ae * 100.0f + CURVE_SLOW_K2 * ad);
-  base = constrain(baseMax - reduce, baseMin, baseMax);
+  float targetBase = constrain(baseMax - reduce, baseMin, baseMax);
+
+  if (pid.currentBase <= 0.0f) {
+    pid.currentBase = baseMax;
+  }
+  float updatedBase = pid.currentBase + (targetBase - pid.currentBase) * BASE_SMOOTH_ALPHA;
+  pid.currentBase = constrain(updatedBase, baseMin, baseMax);
+  int base = (int)roundf(pid.currentBase);
 
   float output = kp * e + ki * pid.integral + kd * derivative;
   int corr = (int)(output * 255.0f);
