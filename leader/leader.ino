@@ -19,6 +19,8 @@ int   BASE_FWD       = 70;   // 前進の基準PWM
 int   BASE_BACK      = 70;   // 後退の基準PWM
 int   BASE_FWD_MIN   = 40;   // カーブ時に減速してもこの値以下にはしない
 int   BASE_BACK_MIN  = 40;   // 後退時の最低PWM
+float BASE_SPEED_ALPHA_ACCEL = 0.25f; // 直線復帰時の加速レスポンス
+float BASE_SPEED_ALPHA_DECEL = 1.0f;  // カーブ時の減速レスポンス
 float KP_FWD         = 0.15f;  // 前進Pゲイン
 float KP_BACK        = 0.05f;  // 後退Pゲイン
 float KI_FWD         = 0.05f;  // 前進Iゲイン
@@ -74,6 +76,9 @@ struct PIDState {
 PIDState pidForward{};
 PIDState pidBackward{};
 
+float baseForwardFiltered = BASE_FWD;
+float baseBackwardFiltered = BASE_BACK;
+
 unsigned int endpointCount = 0;
 
 // 見失い管理
@@ -114,8 +119,10 @@ void resetPidState(PIDState& pid) {
 void resetPidForState(State followState) {
   if (followState == FOLLOW_FWD) {
     resetPidState(pidForward);
+    baseForwardFiltered = BASE_FWD;
   } else if (followState == FOLLOW_BACK) {
     resetPidState(pidBackward);
+    baseBackwardFiltered = BASE_BACK;
   }
 }
 
@@ -228,6 +235,7 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   int baseNominal = (travelDir > 0) ? BASE_FWD : BASE_BACK;
   int baseMin = (travelDir > 0) ? BASE_FWD_MIN : BASE_BACK_MIN;
   int base = baseNominal;
+  float& baseFiltered = (travelDir > 0) ? baseForwardFiltered : baseBackwardFiltered;
 
   unsigned long now = millis();
   float dt = 0.0f;
@@ -252,6 +260,12 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
     int reduce = (int)(CURVE_E_GAIN * ae * 100.0f + CURVE_D_GAIN * ad);
     base = constrain(baseNominal - reduce, baseMin, baseNominal);
   }
+
+  float targetBase = base;
+  float alpha = (targetBase < baseFiltered) ? BASE_SPEED_ALPHA_DECEL : BASE_SPEED_ALPHA_ACCEL;
+  baseFiltered += alpha * (targetBase - baseFiltered);
+  baseFiltered = constrain(baseFiltered, (float)baseMin, (float)baseNominal);
+  base = (int)roundf(baseFiltered);
 
   float output = disableSteering ? 0.0f : (kp * e + ki * pid.integral + kd * derivative);
   int corr = (int)(output * 255.0f);
