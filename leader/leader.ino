@@ -28,6 +28,7 @@ float KI_BACK        = 0.0125f;  // 後退Iゲイン
 float KD_FWD         = 0.01f;  // 前進Dゲイン
 float KD_BACK        = 0.0125f;  // 後退Dゲイン
 float CURVE_E_GAIN   = 0.6f;   // 誤差に対する減速係数
+float CURVE_E_EXP    = 1.4f;   // 誤差に対する減速の非線形指数（1で線形）
 float CURVE_D_GAIN   = 2.0f;   // 変化量に対する減速係数
 float PID_I_LIMIT    = 1.0f;  // I項アンチワインドアップ上限
 float LINE_WHITE     = 40.0f;   // センサ白レベル
@@ -257,7 +258,8 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   if (!disableSteering) {
     float ae = fabsf(e);
     float ad = fabsf(derivative);
-    int reduce = (int)(CURVE_E_GAIN * ae * 100.0f + CURVE_D_GAIN * ad);
+    float errorComponent = CURVE_E_GAIN * powf(ae * 100.0f, CURVE_E_EXP);
+    int reduce = (int)(errorComponent + CURVE_D_GAIN * ad);
     base = constrain(baseNominal - reduce, baseMin, baseNominal);
   }
 
