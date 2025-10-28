@@ -30,6 +30,7 @@ float KD_BACK        = 0.0125f;  // 後退Dゲイン
 float CURVE_E_GAIN   = 0.6f;   // 誤差に対する減速係数
 float CURVE_E_EXP    = 1.4f;   // 誤差に対する減速の非線形指数（1で線形）
 float CURVE_D_GAIN   = 2.0f;   // 変化量に対する減速係数
+float CORR_EXP       = 1.3f;   // 補正量の非線形指数（1で線形）
 float PID_I_LIMIT    = 1.0f;  // I項アンチワインドアップ上限
 float LINE_WHITE     = 40.0f;   // センサ白レベル
 float LINE_BLACK     = 900.0f;  // センサ黒レベル
@@ -270,7 +271,10 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   base = (int)roundf(baseFiltered);
 
   float output = disableSteering ? 0.0f : (kp * e + ki * pid.integral + kd * derivative);
-  int corr = (int)(output * 255.0f);
+  float corrNorm = constrain(output, -1.0f, 1.0f);
+  float corrMagnitude = powf(fabsf(corrNorm), CORR_EXP);
+  float corrScaled = copysignf(corrMagnitude, corrNorm);
+  int corr = (int)(corrScaled * 255.0f);
 
   int dirSign    = (travelDir >= 0) ? 1 : -1;
 
