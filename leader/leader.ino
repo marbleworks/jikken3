@@ -31,6 +31,9 @@ float CURVE_E_GAIN   = 0.015f;   // 誤差に対する減速係数
 float CURVE_E_EXP    = 1.8f;   // 誤差に対する減速の非線形指数（1で線形）
 float CURVE_D_GAIN   = 1.0f;   // 変化量に対する減速係数
 float CORR_EXP       = 1.7f;   // 補正量の非線形指数（1で線形）
+float CORR_SPEED_GAIN = 1.0f;  // 速度に応じたステアリングスケール係数（1で速度と同程度）
+int   CORR_SPEED_MIN  = 60;    // 低速時の最低ステアリング量
+int   CORR_SPEED_MAX  = 255;   // 最高ステアリング量
 float PID_I_LIMIT    = 1.0f;  // I項アンチワインドアップ上限
 float LINE_WHITE     = 40.0f;   // センサ白レベル
 float LINE_BLACK     = 900.0f;  // センサ黒レベル
@@ -274,7 +277,15 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   float corrNorm = constrain(output, -1.0f, 1.0f);
   float corrMagnitude = powf(fabsf(corrNorm), CORR_EXP);
   float corrScaled = copysignf(corrMagnitude, corrNorm);
-  int corr = (int)(corrScaled * 255.0f);
+
+  int corrMax = base;
+  if (!disableSteering) {
+    float scaled = base * CORR_SPEED_GAIN;
+    corrMax = (int)roundf(scaled);
+  }
+  corrMax = constrain(corrMax, CORR_SPEED_MIN, CORR_SPEED_MAX);
+
+  int corr = (int)roundf(corrScaled * corrMax);
 
   int dirSign    = (travelDir >= 0) ? 1 : -1;
 
