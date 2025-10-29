@@ -12,6 +12,11 @@
 #define SENSOR_DEBUG_PRINT 0
 #endif
 
+// PID制御デバッグ出力を有効化する場合は 1 に設定する。
+#ifndef PID_DEBUG_PRINT
+#define PID_DEBUG_PRINT 0
+#endif
+
 // ------------------ チューニング用パラメータ ------------------
 int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
 int   HYST           = 40;    // ヒステリシス
@@ -281,29 +286,23 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   int left  = constrain(base + corr, MIN_PWM, MAX_PWM) * dirSign;
   int right = constrain(base - corr, MIN_PWM, MAX_PWM) * dirSign;
   setWheels(left, right);
-  Serial.print("targetBase:");  Serial.print(targetBase); Serial.print("\t");
-  Serial.print("baseFiltered:");  Serial.print(baseFiltered); Serial.print("\t");
-  // // Serial.print("e:");  Serial.print(e); Serial.print("\t");
-  Serial.print("BASE_FWD:");  Serial.print(BASE_FWD); Serial.print("\t");
-  Serial.print("BASE_FWD_MIN:");  Serial.print(BASE_FWD_MIN); Serial.print("\t");
 
-  Serial.print("left:");  Serial.print(left); Serial.print("\t");
-  Serial.print("right:");  Serial.print(right); Serial.print("\t");
-
-
-  // Serial.print("a:");  Serial.print(1); Serial.print("\t");
-  // Serial.print("lastError:");  Serial.print(pid.lastError); Serial.print("\t");
-  // Serial.print("b:");  Serial.print(-1); Serial.print("\t");
-  Serial.print("0:");  Serial.print(0); Serial.print("\t");
-
-  Serial.println("");
-  // Serial.print(" FOLLOW_FWD");
-  // Serial.print(" dt="); Serial.print(dt, 4);
-  // Serial.print(" e="); Serial.print(e, 3);
-  // Serial.print(" d="); Serial.print(derivative, 1);
-  // Serial.print(" corr="); Serial.print(corr);
-  // Serial.print(" base="); Serial.print(base);
-  // Serial.print(" -> "); Serial.print(left); Serial.print(", "); Serial.println(right);
+#if PID_DEBUG_PRINT
+  // PID制御関連のデバッグ出力
+  Serial.print("BASE_FWD:");      Serial.print(BASE_FWD);      Serial.print("\t");
+  Serial.print("BASE_FWD_MIN:");  Serial.print(BASE_FWD_MIN);  Serial.print("\t");
+  Serial.print("targetBase:");   Serial.print(targetBase);   Serial.print("\t");
+  Serial.print("baseFiltered:"); Serial.print(baseFiltered); Serial.print("\t");
+  Serial.print("baseNominal:");  Serial.print(baseNominal);  Serial.print("\t");
+  Serial.print("baseMin:");      Serial.print(baseMin);      Serial.print("\t");
+  Serial.print("error:");        Serial.print(e);            Serial.print("\t");
+  Serial.print("integral:");     Serial.print(pid.integral); Serial.print("\t");
+  Serial.print("derivative:");   Serial.print(derivative);   Serial.print("\t");
+  Serial.print("corr:");         Serial.print(corr);         Serial.print("\t");
+  Serial.print("left:");         Serial.print(left);         Serial.print("\t");
+  Serial.print("right:");        Serial.print(right);
+  Serial.println();
+#endif
 
   return res;
 }
