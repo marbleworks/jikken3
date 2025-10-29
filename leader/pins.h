@@ -2,11 +2,9 @@
 #include <Arduino.h>
 
 // ===== センサ配線 =====
-inline constexpr uint8_t pinL  = A0;  // 前左
-inline constexpr uint8_t pinC  = A1;  // 前中央
-inline constexpr uint8_t pinR  = A2;  // 前右
-inline constexpr uint8_t pinRL = A3;  // 後左
-inline constexpr uint8_t pinRR = A4;  // 後右
+inline constexpr uint8_t FRONT5_SENSOR_PINS[5] = {A3, A0, A1, A2, A4};
+inline constexpr uint8_t FRONT3_SENSOR_PINS[3] = {A0, A1, A2};
+inline constexpr uint8_t REAR2_SENSOR_PINS[2] = {A3, A4};
 
 // ===== 実行モード選択用可変抵抗 =====
 inline constexpr int RUNMODE_POT_PIN = A5;

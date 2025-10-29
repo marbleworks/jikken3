@@ -14,10 +14,6 @@ extern RunMode runMode;
 
 namespace {
 
-constexpr uint8_t FRONT5_SENSOR_PINS[Sense::MAX_FRONT_SENSORS] = {A3, A0, A1, A2, A4};
-constexpr uint8_t FRONT3_SENSOR_PINS[3] = {A0, A1, A2};
-constexpr uint8_t REAR2_SENSOR_PINS[Sense::MAX_REAR_SENSORS] = {A3, A4};
-
 SensorMode determineSensorMode() {
   return (runMode == RUNMODE_LOOP) ? SensorMode::Front5 : SensorMode::Front3Rear2;
 }
