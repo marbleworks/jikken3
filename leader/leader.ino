@@ -15,32 +15,32 @@
 // ------------------ チューニング用パラメータ ------------------
 int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
 int   HYST           = 40;    // ヒステリシス
-int   BASE_FWD       = 70;   // 前進の基準PWM
-int   BASE_BACK      = 70;   // 後退の基準PWM
-int   BASE_FWD_MIN   = 40;   // カーブ時に減速してもこの値以下にはしない
-int   BASE_BACK_MIN  = 40;   // 後退時の最低PWM
-float BASE_SPEED_ALPHA_ACCEL = 0.25f; // 直線復帰時の加速レスポンス
+int   BASE_FWD       = 180;   // 前進の基準PWM
+int   BASE_BACK      = 180;   // 後退の基準PWM
+int   BASE_FWD_MIN   = 80;   // カーブ時に減速してもこの値以下にはしない
+int   BASE_BACK_MIN  = 80;   // 後退時の最低PWM
+float BASE_SPEED_ALPHA_ACCEL = 0.008f; // 直線復帰時の加速レスポンス
 float BASE_SPEED_ALPHA_DECEL = 1.0f;  // カーブ時の減速レスポンス
-float KP_FWD         = 0.15f;  // 前進Pゲイン
+float KP_FWD         = 0.29f;  // 前進Pゲイン
 float KP_BACK        = 0.05f;  // 後退Pゲイン
-float KI_FWD         = 0.05f;  // 前進Iゲイン
+float KI_FWD         = 0.005f;  // 前進Iゲイン
 float KI_BACK        = 0.0125f;  // 後退Iゲイン
-float KD_FWD         = 0.01f;  // 前進Dゲイン
+float KD_FWD         = 0.02f;  // 前進Dゲイン
 float KD_BACK        = 0.0125f;  // 後退Dゲイン
-float CURVE_E_GAIN   = 0.6f;   // 誤差に対する減速係数
-float CURVE_E_EXP    = 1.4f;   // 誤差に対する減速の非線形指数（1で線形）
-float CURVE_D_GAIN   = 2.0f;   // 変化量に対する減速係数
-float CORR_EXP       = 1.3f;   // 補正量の非線形指数（1で線形）
+float CURVE_E_GAIN   = 0.015f;   // 誤差に対する減速係数
+float CURVE_E_EXP    = 1.8f;   // 誤差に対する減速の非線形指数（1で線形）
+float CURVE_D_GAIN   = 1.0f;   // 変化量に対する減速係数
+float CORR_EXP       = 1.7f;   // 補正量の非線形指数（1で線形）
 float PID_I_LIMIT    = 1.0f;  // I項アンチワインドアップ上限
 float LINE_WHITE     = 40.0f;   // センサ白レベル
 float LINE_BLACK     = 900.0f;  // センサ黒レベル
 float LINE_EPS       = 1e-3f;   // 全白判定のしきい値
-int   MAX_PWM        = 150;   // PWM上限
+int   MAX_PWM        = 255;   // PWM上限
 int   MIN_PWM        = 0;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
 unsigned long LOST_MS_RECIP      = 300; // Reciprocalモードの見失い判定時間
 unsigned long LOST_MS_UTURN      = 50; // UTurnモードの見失い判定時間
-unsigned long LOST_MS_LOOP       = 500; // Loopモードの見失い判定時間
+unsigned long LOST_MS_LOOP       = 5000; // Loopモードの見失い判定時間
 unsigned int ENDPOINT_DONE_COUNT = 2; // 端点遭遇回数の上限 (0 で無効)
 int   REC_STEER      = 128;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED_LEFT  = 90;   // Uターン時の左輪PWM（正で前進）
@@ -281,13 +281,28 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   int left  = constrain(base + corr, MIN_PWM, MAX_PWM) * dirSign;
   int right = constrain(base - corr, MIN_PWM, MAX_PWM) * dirSign;
   setWheels(left, right);
-  Serial.print(" FOLLOW_FWD");
-  Serial.print(" dt="); Serial.print(dt, 4);
-  Serial.print(" e="); Serial.print(e, 3);
-  Serial.print(" d="); Serial.print(derivative, 1);
-  Serial.print(" corr="); Serial.print(corr);
-  Serial.print(" base="); Serial.print(base);
-  Serial.print(" -> "); Serial.print(left); Serial.print(", "); Serial.println(right);
+  // Serial.print("targetBase:");  Serial.print(targetBase); Serial.print("\t");
+  Serial.print("baseFiltered:");  Serial.print(baseFiltered); Serial.print("\t");
+  // // Serial.print("e:");  Serial.print(e); Serial.print("\t");
+  Serial.print("BASE_FWD:");  Serial.print(BASE_FWD); Serial.print("\t");
+  Serial.print("BASE_FWD_MIN:");  Serial.print(BASE_FWD_MIN); Serial.print("\t");
+
+  Serial.print("left:");  Serial.print(left); Serial.print("\t");
+  Serial.print("right:");  Serial.print(right); Serial.print("\t");
+
+
+  Serial.print("a:");  Serial.print(1); Serial.print("\t");
+  Serial.print("lastError:");  Serial.print(pid.lastError); Serial.print("\t");
+  Serial.print("b:");  Serial.print(-1); Serial.print("\t");
+
+  Serial.println("");
+  // Serial.print(" FOLLOW_FWD");
+  // Serial.print(" dt="); Serial.print(dt, 4);
+  // Serial.print(" e="); Serial.print(e, 3);
+  // Serial.print(" d="); Serial.print(derivative, 1);
+  // Serial.print(" corr="); Serial.print(corr);
+  // Serial.print(" base="); Serial.print(base);
+  // Serial.print(" -> "); Serial.print(left); Serial.print(", "); Serial.println(right);
 
   return res;
 }
