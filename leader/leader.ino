@@ -86,6 +86,40 @@ PIDState pidBackward{};
 float baseForwardFiltered = BASE_FWD;
 float baseBackwardFiltered = BASE_BACK;
 
+struct TravelProfile {
+  PIDState& pid;
+  float& baseFiltered;
+  float kp;
+  float ki;
+  float kd;
+  int baseNominal;
+  int baseMin;
+  bool disableSteering;
+};
+
+TravelProfile makeTravelProfile(int travelDir, SensorMode mode) {
+  if (travelDir > 0) {
+    return { pidForward,
+             baseForwardFiltered,
+             KP_FWD,
+             KI_FWD,
+             KD_FWD,
+             BASE_FWD,
+             BASE_FWD_MIN,
+             false };
+  }
+
+  bool disableSteering = (mode == SensorMode::Front5);
+  return { pidBackward,
+           baseBackwardFiltered,
+           KP_BACK,
+           KI_BACK,
+           KD_BACK,
+           BASE_BACK,
+           BASE_BACK_MIN,
+           disableSteering };
+}
+
 unsigned int endpointCount = 0;
 
 // 見失い管理
@@ -215,51 +249,53 @@ bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   return found;
 }
 
-FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
+FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   FollowResult res { false };
 
   SensorPosition position = directionToSensorPosition(travelDir, s.mode);
   bool allWhite = getAllWhite(s, position);
 
+  TravelProfile profile = makeTravelProfile(travelDir, s.mode);
+
   if (handleLineLostTimer(allWhite, getLostMsForMode(runMode))) {
     res.lineLost = true;
-    resetPidState(pid);
+    resetPidState(profile.pid);
     return res;
   }
 
-  bool disableSteering = (travelDir < 0) && (s.mode == SensorMode::Front5);
+  bool disableSteering = profile.disableSteering;
 
   float e = 0.0f;
   if (!disableSteering) {
     e = computeError(s, position);
     if (allWhite) {
-      e = pid.lastError;
+      e = profile.pid.lastError;
     }
   }
-  float kp = (travelDir > 0) ? KP_FWD : KP_BACK;
-  float ki = (travelDir > 0) ? KI_FWD : KI_BACK;
-  float kd = (travelDir > 0) ? KD_FWD : KD_BACK;
-  int baseNominal = (travelDir > 0) ? BASE_FWD : BASE_BACK;
-  int baseMin = (travelDir > 0) ? BASE_FWD_MIN : BASE_BACK_MIN;
+  float kp = profile.kp;
+  float ki = profile.ki;
+  float kd = profile.kd;
+  int baseNominal = profile.baseNominal;
+  int baseMin = profile.baseMin;
   int base = baseNominal;
-  float& baseFiltered = (travelDir > 0) ? baseForwardFiltered : baseBackwardFiltered;
+  float& baseFiltered = profile.baseFiltered;
 
   unsigned long now = millis();
   float dt = 0.0f;
-  if (pid.lastTimeMs != 0) {
-    dt = (now - pid.lastTimeMs) / 1000.0f;
+  if (profile.pid.lastTimeMs != 0) {
+    dt = (now - profile.pid.lastTimeMs) / 1000.0f;
   }
-  pid.lastTimeMs = now;
+  profile.pid.lastTimeMs = now;
 
   float derivative = 0.0f;
   if (!disableSteering && !allWhite && dt > 0.0f) {
-    pid.integral += e * dt;
-    pid.integral = constrain(pid.integral, -PID_I_LIMIT, PID_I_LIMIT);
-    derivative = (e - pid.lastError) / dt;
+    profile.pid.integral += e * dt;
+    profile.pid.integral = constrain(profile.pid.integral, -PID_I_LIMIT, PID_I_LIMIT);
+    derivative = (e - profile.pid.lastError) / dt;
   } else if (disableSteering) {
-    pid.integral = 0.0f;
+    profile.pid.integral = 0.0f;
   }
-  pid.lastError = disableSteering ? 0.0f : e;
+  profile.pid.lastError = disableSteering ? 0.0f : e;
 
   if (!disableSteering) {
     float ae = fabsf(e);
@@ -275,7 +311,7 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   baseFiltered = constrain(baseFiltered, (float)baseMin, (float)baseNominal);
   base = (int)roundf(baseFiltered);
 
-  float output = disableSteering ? 0.0f : (kp * e + ki * pid.integral + kd * derivative);
+  float output = disableSteering ? 0.0f : (kp * e + ki * profile.pid.integral + kd * derivative);
   float corrNorm = constrain(output, -1.0f, 1.0f);
   float corrMagnitude = powf(fabsf(corrNorm), CORR_EXP);
   float corrScaled = copysignf(corrMagnitude, corrNorm);
@@ -296,7 +332,7 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
   Serial.print("baseNominal:");  Serial.print(baseNominal);  Serial.print("\t");
   Serial.print("baseMin:");      Serial.print(baseMin);      Serial.print("\t");
   Serial.print("error:");        Serial.print(e);            Serial.print("\t");
-  Serial.print("integral:");     Serial.print(pid.integral); Serial.print("\t");
+  Serial.print("integral:");     Serial.print(profile.pid.integral); Serial.print("\t");
   Serial.print("derivative:");   Serial.print(derivative);   Serial.print("\t");
   Serial.print("corr:");         Serial.print(corr);         Serial.print("\t");
   Serial.print("left:");         Serial.print(left);         Serial.print("\t");
@@ -441,7 +477,7 @@ void loop() {
 
     // 前進でライントレース（P制御）
     case FOLLOW_FWD: {
-      FollowResult r = runLineTraceCommon(s, pidForward, +1);
+      FollowResult r = runLineTraceCommon(s, +1);
       if (r.lineLost) {
         handleForwardLineLost();
         break;
@@ -463,7 +499,7 @@ void loop() {
 
     // 後退でライントレース（P制御：進行方向が逆なので注意）
     case FOLLOW_BACK: {
-      FollowResult r = runLineTraceCommon(s, pidBackward, -1);
+      FollowResult r = runLineTraceCommon(s, -1);
       if (r.lineLost) {
         handleBackwardLineLost();
         break;
