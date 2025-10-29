@@ -7,31 +7,49 @@
 
 #include <math.h>
 
+// センサーデバッグ出力を有効化する場合は 1 に設定する。
+#ifndef SENSOR_DEBUG_PRINT
+#define SENSOR_DEBUG_PRINT 0
+#endif
+
+// PID制御デバッグ出力を有効化する場合は 1 に設定する。
+#ifndef PID_DEBUG_PRINT
+#define PID_DEBUG_PRINT 0
+#endif
+
 // ------------------ チューニング用パラメータ ------------------
 int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
 int   HYST           = 40;    // ヒステリシス
-int   BASE_FWD       = 70;   // 前進の基準PWM
-int   BASE_BACK      = 70;   // 後退の基準PWM
-float KP_FWD         = 0.15f;  // 前進Pゲイン
-float KP_BACK        = 0.05f;  // 後退Pゲイン
-float KI_FWD         = 0.05f;  // 前進Iゲイン
-float KI_BACK        = 0.0125f;  // 後退Iゲイン
-float KD_FWD         = 0.01f;  // 前進Dゲイン
-float KD_BACK        = 0.0125f;  // 後退Dゲイン
+int   BASE_FWD       = 255;   // 前進の基準PWM
+int   BASE_BACK      = 200;   // 後退の基準PWM
+int   BASE_FWD_MIN   = 100;   // カーブ時に減速してもこの値以下にはしない
+int   BASE_BACK_MIN  = 100;   // 後退時の最低PWM
+float BASE_SPEED_ALPHA_ACCEL = 0.15f; // 直線復帰時の加速レスポンス
+float BASE_SPEED_ALPHA_DECEL = 1.0f;  // カーブ時の減速レスポンス
+float KP_FWD         = 0.35f;  // 前進Pゲイン
+float KP_BACK        = 0.3f;  // 後退Pゲイン
+float KI_FWD         = 0.005f;  // 前進Iゲイン
+float KI_BACK        = 0.005f;  // 後退Iゲイン
+float KD_FWD         = 0.031f;  // 前進Dゲイン
+float KD_BACK        = 0.04f;  // 後退Dゲイン
+float CURVE_E_GAIN   = 0.058f;   // 誤差に対する減速係数
+float CURVE_E_EXP    = 1.5f;   // 誤差に対する減速の非線形指数（1で線形）
+float CURVE_D_GAIN   = 1.0f;   // 変化量に対する減速係数
+float CORR_EXP       = 1.5f;   // 補正量の非線形指数（1で線形）
 float PID_I_LIMIT    = 1.0f;  // I項アンチワインドアップ上限
 float LINE_WHITE     = 40.0f;   // センサ白レベル
 float LINE_BLACK     = 900.0f;  // センサ黒レベル
 float LINE_EPS       = 1e-3f;   // 全白判定のしきい値
-int   MAX_PWM        = 150;   // PWM上限
-int   MIN_PWM        = 0;     // PWM下限
+int   MAX_PWM        = 255;   // PWM上限
+int   MIN_PWM        = -1;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
-unsigned long LOST_MS_RECIP      = 300; // Reciprocalモードの見失い判定時間
+unsigned long LOST_MS_RECIP      = 50; // Reciprocalモードの見失い判定時間
 unsigned long LOST_MS_UTURN      = 50; // UTurnモードの見失い判定時間
-unsigned long LOST_MS_LOOP       = 500; // Loopモードの見失い判定時間
+unsigned long LOST_MS_LOOP       = 0; // Loopモードの見失い判定時間
 unsigned int ENDPOINT_DONE_COUNT = 2; // 端点遭遇回数の上限 (0 で無効)
-int   REC_STEER      = 128;    // リカバリ時の曲げ量（左右差）
-int   UTURN_SPEED_LEFT  = 90;   // Uターン時の左輪PWM（正で前進）
-int   UTURN_SPEED_RIGHT = -130;  // Uターン時の右輪PWM（正で前進）
+int   REC_STEER      = 240;    // リカバリ時の曲げ量（左右差）
+int   UTURN_SPEED_LEFT  = 70;   // Uターン時の左輪PWM（正で前進）
+int   UTURN_SPEED_RIGHT = -150;  // Uターン時の右輪PWM（正で前進）
 unsigned long UTURN_TIME_MS = 810; // 180度回頭に掛ける時間（要調整）
 unsigned long PRE_DONE_DURATION_MS = 100; // PRE_DONE時間（DONEの前に前進or後退）
 // ----------------------------------------------------------------
@@ -64,6 +82,43 @@ struct PIDState {
 
 PIDState pidForward{};
 PIDState pidBackward{};
+
+float baseForwardFiltered = BASE_FWD;
+float baseBackwardFiltered = BASE_BACK;
+
+struct TravelProfile {
+  PIDState& pid;
+  float& baseFiltered;
+  float kp;
+  float ki;
+  float kd;
+  int baseNominal;
+  int baseMin;
+  bool disableSteering;
+};
+
+TravelProfile makeTravelProfile(int travelDir, SensorMode mode) {
+  if (travelDir > 0) {
+    return { pidForward,
+             baseForwardFiltered,
+             KP_FWD,
+             KI_FWD,
+             KD_FWD,
+             BASE_FWD,
+             BASE_FWD_MIN,
+             false };
+  }
+
+  bool disableSteering = (mode == SensorMode::Front5);
+  return { pidBackward,
+           baseBackwardFiltered,
+           KP_BACK,
+           KI_BACK,
+           KD_BACK,
+           BASE_BACK,
+           BASE_BACK_MIN,
+           disableSteering };
+}
 
 unsigned int endpointCount = 0;
 
@@ -105,8 +160,10 @@ void resetPidState(PIDState& pid) {
 void resetPidForState(State followState) {
   if (followState == FOLLOW_FWD) {
     resetPidState(pidForward);
+    baseForwardFiltered = BASE_FWD;
   } else if (followState == FOLLOW_BACK) {
     resetPidState(pidBackward);
+    baseBackwardFiltered = BASE_BACK;
   }
 }
 
@@ -181,7 +238,7 @@ void handleUTurn() {
 bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   int speed = speedSign * SEEK_SPEED;
   setWheels(speed, speed);
-  SensorPosition position = directionToSensorPosition(speedSign);
+  SensorPosition position = directionToSensorPosition(speedSign, s.mode);
   bool found = getAnyBlack(s, position);
   if (found) {
     const __FlashStringHelper* reason =
@@ -192,59 +249,96 @@ bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   return found;
 }
 
-FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
+FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   FollowResult res { false };
 
-  SensorPosition position = directionToSensorPosition(travelDir);
+  SensorPosition position = directionToSensorPosition(travelDir, s.mode);
   bool allWhite = getAllWhite(s, position);
+
+  TravelProfile profile = makeTravelProfile(travelDir, s.mode);
 
   if (handleLineLostTimer(allWhite, getLostMsForMode(runMode))) {
     res.lineLost = true;
-    resetPidState(pid);
+    resetPidState(profile.pid);
     return res;
   }
 
-  float e = (position == SensorPosition::Front)
-              ? computeError(s.rawL, s.rawC, s.rawR)
-              : computeError(s.rawRL, 0, s.rawRR);
-  if (allWhite) {
-    e = pid.lastError;
-    // e = 0;
+  bool disableSteering = profile.disableSteering;
+
+  float e = 0.0f;
+  if (!disableSteering) {
+    e = computeError(s, position);
+    if (allWhite) {
+      e = profile.pid.lastError;
+    }
   }
-  float kp = (travelDir > 0) ? KP_FWD : KP_BACK;
-  float ki = (travelDir > 0) ? KI_FWD : KI_BACK;
-  float kd = (travelDir > 0) ? KD_FWD : KD_BACK;
-  int base = (travelDir > 0) ? BASE_FWD : BASE_BACK;
+  float kp = profile.kp;
+  float ki = profile.ki;
+  float kd = profile.kd;
+  int baseNominal = profile.baseNominal;
+  int baseMin = profile.baseMin;
+  int base = baseNominal;
+  float& baseFiltered = profile.baseFiltered;
 
   unsigned long now = millis();
   float dt = 0.0f;
-  if (pid.lastTimeMs != 0) {
-    dt = (now - pid.lastTimeMs) / 1000.0f;
+  if (profile.pid.lastTimeMs != 0) {
+    dt = (now - profile.pid.lastTimeMs) / 1000.0f;
   }
-  pid.lastTimeMs = now;
+  profile.pid.lastTimeMs = now;
 
   float derivative = 0.0f;
-  if (!allWhite && dt > 0.0f) {
-    pid.integral += e * dt;
-    pid.integral = constrain(pid.integral, -PID_I_LIMIT, PID_I_LIMIT);
-    derivative = (e - pid.lastError) / dt;
+  if (!disableSteering && !allWhite && dt > 0.0f) {
+    profile.pid.integral += e * dt;
+    profile.pid.integral = constrain(profile.pid.integral, -PID_I_LIMIT, PID_I_LIMIT);
+    derivative = (e - profile.pid.lastError) / dt;
+  } else if (disableSteering) {
+    profile.pid.integral = 0.0f;
   }
-  pid.lastError = e;
+  profile.pid.lastError = disableSteering ? 0.0f : e;
 
-  float output = kp * e + ki * pid.integral + kd * derivative;
-  int corr = (int)(output * 255.0f);
+  if (!disableSteering) {
+    float ae = fabsf(e);
+    float ad = fabsf(derivative);
+    float errorComponent = CURVE_E_GAIN * powf(ae * 100.0f, CURVE_E_EXP);
+    int reduce = (int)(errorComponent + CURVE_D_GAIN * ad);
+    base = constrain(baseNominal - reduce, baseMin, baseNominal);
+  }
+
+  float targetBase = base;
+  float alpha = (targetBase < baseFiltered) ? BASE_SPEED_ALPHA_DECEL : BASE_SPEED_ALPHA_ACCEL;
+  baseFiltered += alpha * (targetBase - baseFiltered);
+  baseFiltered = constrain(baseFiltered, (float)baseMin, (float)baseNominal);
+  base = (int)roundf(baseFiltered);
+
+  float output = disableSteering ? 0.0f : (kp * e + ki * profile.pid.integral + kd * derivative);
+  float corrNorm = constrain(output, -1.0f, 1.0f);
+  float corrMagnitude = powf(fabsf(corrNorm), CORR_EXP);
+  float corrScaled = copysignf(corrMagnitude, corrNorm);
+  int corr = (int)(corrScaled * 255.0f);
 
   int dirSign    = (travelDir >= 0) ? 1 : -1;
 
   int left  = constrain(base + corr, MIN_PWM, MAX_PWM) * dirSign;
   int right = constrain(base - corr, MIN_PWM, MAX_PWM) * dirSign;
   setWheels(left, right);
-  Serial.print(" FOLLOW_FWD");
-  Serial.print(" dt="); Serial.print(dt, 4);
-  Serial.print(" e="); Serial.print(e, 3);
-  Serial.print(" d="); Serial.print(derivative, 1);
-  Serial.print(" corr="); Serial.print(corr);
-  Serial.print(" -> "); Serial.print(left); Serial.print(", "); Serial.println(right);
+
+#if PID_DEBUG_PRINT
+  // PID制御関連のデバッグ出力
+  Serial.print("BASE_FWD:");      Serial.print(BASE_FWD);      Serial.print("\t");
+  Serial.print("BASE_FWD_MIN:");  Serial.print(BASE_FWD_MIN);  Serial.print("\t");
+  Serial.print("targetBase:");   Serial.print(targetBase);   Serial.print("\t");
+  Serial.print("baseFiltered:"); Serial.print(baseFiltered); Serial.print("\t");
+  Serial.print("baseNominal:");  Serial.print(baseNominal);  Serial.print("\t");
+  Serial.print("baseMin:");      Serial.print(baseMin);      Serial.print("\t");
+  Serial.print("error:");        Serial.print(e);            Serial.print("\t");
+  Serial.print("integral:");     Serial.print(profile.pid.integral); Serial.print("\t");
+  Serial.print("derivative:");   Serial.print(derivative);   Serial.print("\t");
+  Serial.print("corr:");         Serial.print(corr);         Serial.print("\t");
+  Serial.print("left:");         Serial.print(left);         Serial.print("\t");
+  Serial.print("right:");        Serial.print(right);
+  Serial.println();
+#endif
 
   return res;
 }
@@ -252,8 +346,14 @@ FollowResult runLineTraceCommon(const Sense& s, PIDState& pid, int travelDir) {
 void recoverLine(const Sense& s, int basePwm, int travelDir) {
   int dirSign = (travelDir >= 0) ? 1 : -1;
 
+  if (travelDir < 0 && s.mode == SensorMode::Front5) {
+    int speed = constrain(basePwm, MIN_PWM, MAX_PWM) * dirSign;
+    setWheels(speed, speed);
+    return;
+  }
+
   int steerOffset;
-  int lastDir = getLastBlackDirState(s, directionToSensorPosition(travelDir));
+  int lastDir = getLastBlackDirState(s, directionToSensorPosition(travelDir, s.mode));
   if (lastDir > 0) {
     steerOffset = REC_STEER;
   } else if (lastDir < 0) {
@@ -270,7 +370,7 @@ void recoverLine(const Sense& s, int basePwm, int travelDir) {
 }
 
 bool handleRecover(const Sense& s, State followState, int basePwm, int travelDir) {
-  SensorPosition position = directionToSensorPosition(travelDir);
+  SensorPosition position = directionToSensorPosition(travelDir, s.mode);
   bool recovered = getAnyBlack(s, position);
   if (recovered) {
     const __FlashStringHelper* reason =
@@ -365,6 +465,9 @@ void setup() {
 
 void loop() {
   Sense s = readSensors();
+#if SENSOR_DEBUG_PRINT
+  debugPrintSensors(s);
+#endif
   switch (state) {
     // 端点(全白)から前進して黒ラインを掴む
     case SEEK_LINE_FWD: {
@@ -374,7 +477,7 @@ void loop() {
 
     // 前進でライントレース（P制御）
     case FOLLOW_FWD: {
-      FollowResult r = runLineTraceCommon(s, pidForward, +1);
+      FollowResult r = runLineTraceCommon(s, +1);
       if (r.lineLost) {
         handleForwardLineLost();
         break;
@@ -396,7 +499,7 @@ void loop() {
 
     // 後退でライントレース（P制御：進行方向が逆なので注意）
     case FOLLOW_BACK: {
-      FollowResult r = runLineTraceCommon(s, pidBackward, -1);
+      FollowResult r = runLineTraceCommon(s, -1);
       if (r.lineLost) {
         handleBackwardLineLost();
         break;

@@ -2,22 +2,29 @@
 
 #include <Arduino.h>
 
+enum class SensorMode {
+  Front5,
+  Front3Rear2,
+};
+
 enum class SensorPosition {
   Front,
   Rear,
 };
 
 struct Sense {
-  int rawL;
-  int rawC;
-  int rawR;
-  int rawRL;
-  int rawRR;
-  bool isBlackL;
-  bool isBlackC;
-  bool isBlackR;
-  bool isBlackRL;
-  bool isBlackRR;
+  static constexpr size_t MAX_FRONT_SENSORS = 5;
+  static constexpr size_t MAX_REAR_SENSORS = 2;
+
+  SensorMode mode;
+  size_t frontCount;
+  size_t rearCount;
+
+  int rawFront[MAX_FRONT_SENSORS];
+  bool isBlackFront[MAX_FRONT_SENSORS];
+  int rawRear[MAX_REAR_SENSORS];
+  bool isBlackRear[MAX_REAR_SENSORS];
+
   bool anyBlackFront;
   bool allBlackFront;
   bool allWhiteFront;
@@ -41,6 +48,7 @@ int getLastBlackDirState(const Sense& s, SensorPosition position);
 bool getAnyBlack(const Sense& s, SensorPosition position);
 bool getAllBlack(const Sense& s, SensorPosition position);
 bool getAllWhite(const Sense& s, SensorPosition position);
-float computeError(int rawL, int rawC, int rawR);
-SensorPosition directionToSensorPosition(int direction);
+float computeError(const Sense& s, SensorPosition position);
+SensorPosition directionToSensorPosition(int direction, SensorMode mode);
+void debugPrintSensors(const Sense& s);
 
