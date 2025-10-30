@@ -50,7 +50,6 @@ unsigned int ENDPOINT_DONE_COUNT = 2; // 端点遭遇回数の上限 (0 で無�
 int   REC_STEER      = 240;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED_LEFT  = 70;   // Uターン時の左輪PWM（正で前進）
 int   UTURN_SPEED_RIGHT = -150;  // Uターン時の右輪PWM（正で前進）
-unsigned long UTURN_TIME_MS = 810; // 180度回頭に掛ける時間（要調整）
 unsigned long PRE_DONE_DURATION_MS = 100; // PRE_DONE時間（DONEの前に前進or後退）
 // ----------------------------------------------------------------
 
@@ -124,8 +123,9 @@ unsigned int endpointCount = 0;
 
 // 見失い管理
 Timer lineLostTimer;
-Timer uturnTimer;
 Timer preDoneTimer;
+
+bool uturnReadyForBlack = false;
 
 unsigned long getLostMsForMode(RunMode mode) {
   switch (mode) {
@@ -175,6 +175,9 @@ void changeState(State newState,
 
   prevState = state;
   state = newState;
+  if (state == UTURN) {
+    uturnReadyForBlack = false;
+  }
   resetPidForState(newState);
 
   if (reason) {
@@ -200,19 +203,6 @@ bool handleLineLostTimer(bool allWhite, unsigned long lostMs) {
   return false;
 }
 
-bool handleUTurnTimer() {
-  if (!uturnTimer.running()) {
-    uturnTimer.start();
-  }
-
-  if (uturnTimer.elapsed() > UTURN_TIME_MS) {
-    uturnTimer.reset();
-    return true;
-  }
-
-  return false;
-}
-
 bool handlePreDoneTimer() {
   if (!preDoneTimer.running()) {
     preDoneTimer.start();
@@ -226,13 +216,19 @@ bool handlePreDoneTimer() {
   return false;
 }
 
-void handleUTurn() {
-  if (!handleUTurnTimer()) {
-    setWheels(UTURN_SPEED_LEFT, UTURN_SPEED_RIGHT);
+void handleUTurn(const Sense& s) {
+  bool anyBlackFront = getAnyBlack(s, SensorPosition::Front);
+
+  if (!uturnReadyForBlack) {
+    if (!anyBlackFront) {
+      uturnReadyForBlack = true;
+    }
+  } else if (anyBlackFront) {
+    changeState(SEEK_LINE_FWD, F("UTURN complete"));
     return;
   }
 
-  changeState(SEEK_LINE_FWD, F("UTURN complete"));
+  setWheels(UTURN_SPEED_LEFT, UTURN_SPEED_RIGHT);
 }
 
 bool handleSeekLine(State followState, int speedSign, const Sense& s) {
@@ -514,7 +510,7 @@ void loop() {
     }
 
     case UTURN: {
-      handleUTurn();
+      handleUTurn(s);
       break;
     }
 

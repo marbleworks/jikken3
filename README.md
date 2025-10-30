@@ -80,7 +80,7 @@ Arduino Uno と前方 3・後方 2 の計 5 つのフォトリフレクタを用
 - **制御上限**: `MAX_PWM` / `MIN_PWM`（モータ出力の上下限）。
 - **ライン探索 / ロスト**: `SEEK_SPEED`（スタート時の探索速度）、`LOST_MS_*`（モード別ロスト判定時間）、`REC_STEER`（復帰時の旋回量）。
 - **端点処理**: `ENDPOINT_DONE_COUNT`（停止までの端点検出回数）、`PRE_DONE_DURATION_MS`（停止前の慣性時間）。
-- **U ターン**: `UTURN_SPEED_LEFT` / `UTURN_SPEED_RIGHT`（各輪の PWM）、`UTURN_TIME_MS`（旋回継続時間）。
+- **U ターン**: `UTURN_SPEED_LEFT` / `UTURN_SPEED_RIGHT`（各輪の PWM）。前方センサが黒ラインを再検知するまでこれらの速度で旋回を継続します。
 
 調整時は一度に 1 パラメータずつ変更し、シリアルモニタやセンサ表示 LED (`leader/sensor_leds.*`) を活用して挙動を確認することを推奨します。
 
