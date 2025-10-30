@@ -43,6 +43,7 @@ float LINE_EPS       = 1e-3f;   // 全白判定のしきい値
 int   MAX_PWM        = 255;   // PWM上限
 int   MIN_PWM        = -1;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
+unsigned long SEEK_LINE_BACK_MIN_MS = 0; // SEEK_LINE_BACK 継続の最低時間 (0 で無効)
 unsigned long LOST_MS_RECIP      = 50; // Reciprocalモードの見失い判定時間
 unsigned long LOST_MS_UTURN      = 50; // UTurnモードの見失い判定時間
 unsigned long LOST_MS_LOOP       = 0; // Loopモードの見失い判定時間
@@ -126,6 +127,18 @@ unsigned int endpointCount = 0;
 Timer lineLostTimer;
 Timer uturnTimer;
 Timer preDoneTimer;
+Timer seekLineBackTimer;
+
+void updateSeekLineBackTimer(State oldState, State newState) {
+  if (newState == SEEK_LINE_BACK) {
+    seekLineBackTimer.reset();
+    if (SEEK_LINE_BACK_MIN_MS > 0) {
+      seekLineBackTimer.start();
+    }
+  } else if (oldState == SEEK_LINE_BACK && seekLineBackTimer.running()) {
+    seekLineBackTimer.reset();
+  }
+}
 
 unsigned long getLostMsForMode(RunMode mode) {
   switch (mode) {
@@ -173,9 +186,11 @@ void changeState(State newState,
     return;
   }
 
+  State oldState = state;
   prevState = state;
   state = newState;
   resetPidForState(newState);
+  updateSeekLineBackTimer(oldState, newState);
 
   if (reason) {
     Serial.print(reason);
@@ -241,6 +256,14 @@ bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   SensorPosition position = directionToSensorPosition(speedSign, s.mode);
   bool found = getAnyBlack(s, position);
   if (found) {
+    if (followState == FOLLOW_BACK && SEEK_LINE_BACK_MIN_MS > 0 &&
+        seekLineBackTimer.running() &&
+        seekLineBackTimer.elapsed() < SEEK_LINE_BACK_MIN_MS) {
+      return false;
+    }
+    if (followState == FOLLOW_BACK && seekLineBackTimer.running()) {
+      seekLineBackTimer.reset();
+    }
     const __FlashStringHelper* reason =
       (followState == FOLLOW_FWD) ? F("Line found (forward)") : F("Line found (backward)");
     changeState(followState, reason);
