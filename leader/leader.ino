@@ -18,7 +18,7 @@
 #endif
 
 // ------------------ チューニング用パラメータ ------------------
-int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
+int   THRESHOLD      = 550;   // 白40 / 黒1000想定の中間。環境で調整
 int   HYST           = 40;    // ヒステリシス
 int   BASE_FWD       = 255;   // 前進の基準PWM
 int   BASE_BACK      = 200;   // 後退の基準PWM
@@ -32,7 +32,7 @@ float KI_FWD         = 0.005f;  // 前進Iゲイン
 float KI_BACK        = 0.005f;  // 後退Iゲイン
 float KD_FWD         = 0.031f;  // 前進Dゲイン
 float KD_BACK        = 0.04f;  // 後退Dゲイン
-float CURVE_E_GAIN   = 0.058f;   // 誤差に対する減速係数
+float CURVE_E_GAIN   = 0.059f;   // 誤差に対する減速係数
 float CURVE_E_EXP    = 1.5f;   // 誤差に対する減速の非線形指数（1で線形）
 float CURVE_D_GAIN   = 1.0f;   // 変化量に対する減速係数
 float CORR_EXP       = 1.5f;   // 補正量の非線形指数（1で線形）
@@ -51,7 +51,7 @@ unsigned int ENDPOINT_DONE_COUNT = 2; // 端点遭遇回数の上限 (0 で無�
 int   REC_STEER      = 240;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED_LEFT  = 70;   // Uターン時の左輪PWM（正で前進）
 int   UTURN_SPEED_RIGHT = -150;  // Uターン時の右輪PWM（正で前進）
-unsigned long UTURN_HOLD_DURATION_MS = 200; // Uターン後も継続させる時間
+unsigned long UTURN_HOLD_DURATION_MS = 0; // Uターン後も継続させる時間
 unsigned long PRE_DONE_DURATION_MS = 100; // PRE_DONE時間（DONEの前に前進or後退）
 // ----------------------------------------------------------------
 
