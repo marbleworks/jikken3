@@ -87,6 +87,25 @@ PIDState pidBackward{};
 float baseForwardFiltered = BASE_FWD;
 float baseBackwardFiltered = BASE_BACK;
 
+// ====== 周回コース記憶関連 ======
+struct CourseMemoryEntry {
+  int leftPwm;
+  int rightPwm;
+};
+
+const size_t COURSE_MEMORY_CAPACITY = 3000;
+const size_t MIN_LOOP_MEMORY_SAMPLES = 200;
+
+CourseMemoryEntry courseMemory[COURSE_MEMORY_CAPACITY];
+size_t courseMemoryLength = 0;
+size_t courseMemoryPlaybackIndex = 0;
+bool loopMemoryRecording = false;
+bool loopMemoryReady = false;
+bool loopMarkerLatched = false;
+bool loopMarkerInitialized = false;
+unsigned int loopLapCount = 0;
+// ==================================
+
 struct TravelProfile {
   PIDState& pid;
   float& baseFiltered;
@@ -202,6 +221,75 @@ void changeState(State newState,
   }
 }
 
+bool shouldRecordCourseMemory(int travelDir) {
+  return (runMode == RUNMODE_LOOP) && (travelDir > 0) &&
+         (state == FOLLOW_FWD) && loopMemoryRecording &&
+         (courseMemoryLength < COURSE_MEMORY_CAPACITY);
+}
+
+bool shouldPlaybackCourseMemory(int travelDir) {
+  return (runMode == RUNMODE_LOOP) && (travelDir > 0) &&
+         (state == FOLLOW_FWD) && loopMemoryReady &&
+         (courseMemoryLength > 0);
+}
+
+void recordCourseMemorySample(int left, int right) {
+  if (!loopMemoryRecording) {
+    return;
+  }
+  if (courseMemoryLength >= COURSE_MEMORY_CAPACITY) {
+    loopMemoryRecording = false;
+    loopMemoryReady = (courseMemoryLength > 0);
+    return;
+  }
+  courseMemory[courseMemoryLength++] = { left, right };
+}
+
+bool fetchCourseMemoryPlayback(int travelDir, CourseMemoryEntry& entry) {
+  if (!shouldPlaybackCourseMemory(travelDir)) {
+    return false;
+  }
+  entry = courseMemory[courseMemoryPlaybackIndex];
+  courseMemoryPlaybackIndex = (courseMemoryPlaybackIndex + 1) % courseMemoryLength;
+  return true;
+}
+
+void updateLoopCourseMemoryState(const Sense& s) {
+  if (runMode != RUNMODE_LOOP || s.mode != SensorMode::Front5) {
+    return;
+  }
+
+  bool onMarker = s.allBlackFront;
+  if (onMarker) {
+    if (!loopMarkerLatched) {
+      loopMarkerLatched = true;
+      if (!loopMemoryReady) {
+        if (!loopMarkerInitialized) {
+          loopMarkerInitialized = true;
+          loopMemoryRecording = true;
+          courseMemoryLength = 0;
+          courseMemoryPlaybackIndex = 0;
+          Serial.println(F("Loop memory: start recording first lap"));
+        } else if (loopMemoryRecording && courseMemoryLength >= MIN_LOOP_MEMORY_SAMPLES) {
+          loopMemoryRecording = false;
+          loopMemoryReady = true;
+          loopLapCount = 1;
+          courseMemoryPlaybackIndex = 0;
+          Serial.print(F("Loop memory recorded samples: "));
+          Serial.println(courseMemoryLength);
+        }
+      } else {
+        ++loopLapCount;
+        courseMemoryPlaybackIndex = 0;
+        Serial.print(F("Loop memory playback lap "));
+        Serial.println(loopLapCount + 1);
+      }
+    }
+  } else {
+    loopMarkerLatched = false;
+  }
+}
+
 bool handleLineLostTimer(bool allWhite, unsigned long lostMs) {
   if (allWhite) {
     if (!lineLostTimer.running()) {
@@ -289,11 +377,20 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   bool allWhite = getAllWhite(s, position);
 
   TravelProfile profile = makeTravelProfile(travelDir, s.mode);
+  bool playbackActive = shouldPlaybackCourseMemory(travelDir);
 
   if (handleLineLostTimer(allWhite, getLostMsForMode(runMode))) {
     res.lineLost = true;
     resetPidState(profile.pid);
     return res;
+  }
+
+  if (playbackActive) {
+    CourseMemoryEntry playbackEntry{};
+    if (fetchCourseMemoryPlayback(travelDir, playbackEntry)) {
+      setWheels(playbackEntry.leftPwm, playbackEntry.rightPwm);
+      return res;
+    }
   }
 
   bool disableSteering = profile.disableSteering;
@@ -355,6 +452,10 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   int left  = constrain(base + corr, MIN_PWM, MAX_PWM) * dirSign;
   int right = constrain(base - corr, MIN_PWM, MAX_PWM) * dirSign;
   setWheels(left, right);
+
+  if (shouldRecordCourseMemory(travelDir)) {
+    recordCourseMemorySample(left, right);
+  }
 
 #if PID_DEBUG_PRINT
   // PID制御関連のデバッグ出力
@@ -498,6 +599,7 @@ void setup() {
 
 void loop() {
   Sense s = readSensors();
+  updateLoopCourseMemoryState(s);
 #if SENSOR_DEBUG_PRINT
   debugPrintSensors(s);
 #endif
