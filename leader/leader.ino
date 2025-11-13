@@ -51,6 +51,7 @@ unsigned int ENDPOINT_DONE_COUNT = 2; // 端点遭遇回数の上限 (0 で無�
 int   REC_STEER      = 240;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED_LEFT  = 70;   // Uターン時の左輪PWM（正で前進）
 int   UTURN_SPEED_RIGHT = -150;  // Uターン時の右輪PWM（正で前進）
+unsigned long UTURN_HOLD_DURATION_MS = 200; // Uターン後も継続させる時間
 unsigned long PRE_DONE_DURATION_MS = 100; // PRE_DONE時間（DONEの前に前進or後退）
 // ----------------------------------------------------------------
 
@@ -126,6 +127,7 @@ unsigned int endpointCount = 0;
 Timer lineLostTimer;
 Timer preDoneTimer;
 Timer seekLineBackTimer;
+Timer uturnHoldTimer;
 
 bool uturnReadyForBlack = false;
 
@@ -184,6 +186,7 @@ void changeState(State newState,
   }
   if (state == UTURN) {
     uturnReadyForBlack = false;
+    uturnHoldTimer.reset();
   }
   resetPidForState(newState);
 
@@ -229,6 +232,16 @@ bool handlePreDoneTimer() {
 }
 
 void handleUTurn(const Sense& s) {
+  if (uturnHoldTimer.running()) {
+    if (uturnHoldTimer.elapsed() >= UTURN_HOLD_DURATION_MS) {
+      uturnHoldTimer.reset();
+      changeState(SEEK_LINE_FWD, F("UTURN complete"));
+      return;
+    }
+    setWheels(UTURN_SPEED_LEFT, UTURN_SPEED_RIGHT);
+    return;
+  }
+
   bool anyBlackFront = getAnyBlack(s, SensorPosition::Front);
 
   if (!uturnReadyForBlack) {
@@ -236,8 +249,7 @@ void handleUTurn(const Sense& s) {
       uturnReadyForBlack = true;
     }
   } else if (anyBlackFront) {
-    changeState(SEEK_LINE_FWD, F("UTURN complete"));
-    return;
+    uturnHoldTimer.start();
   }
 
   setWheels(UTURN_SPEED_LEFT, UTURN_SPEED_RIGHT);
