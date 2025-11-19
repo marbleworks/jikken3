@@ -43,15 +43,14 @@ float LINE_EPS       = 1e-3f;   // 全白判定のしきい値
 int   MAX_PWM        = 255;   // PWM上限
 int   MIN_PWM        = -1;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
-unsigned long SEEK_LINE_BACK_MIN_MS = 0; // SEEK_LINE_BACK 継続の最低時間 (0 で無効)
-unsigned long LOST_MS_RECIP      = 50; // Reciprocalモードの見失い判定時間
-unsigned long LOST_MS_UTURN      = 50; // UTurnモードの見失い判定時間
+unsigned long SEEK_LINE_BACK_MIN_DURATION_MS = 500; // SEEK_LINE_BACKの最低継続時間
+unsigned long LOST_MS_RECIP      = 100; // Reciprocalモードの見失い判定時間
+unsigned long LOST_MS_UTURN      = 100; // UTurnモードの見失い判定時間
 unsigned long LOST_MS_LOOP       = 0; // Loopモードの見失い判定時間
 unsigned int ENDPOINT_DONE_COUNT = 2; // 端点遭遇回数の上限 (0 で無効)
 int   REC_STEER      = 240;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED_LEFT  = 70;   // Uターン時の左輪PWM（正で前進）
 int   UTURN_SPEED_RIGHT = -150;  // Uターン時の右輪PWM（正で前進）
-unsigned long UTURN_TIME_MS = 810; // 180度回頭に掛ける時間（要調整）
 unsigned long PRE_DONE_DURATION_MS = 100; // PRE_DONE時間（DONEの前に前進or後退）
 // ----------------------------------------------------------------
 
@@ -125,20 +124,10 @@ unsigned int endpointCount = 0;
 
 // 見失い管理
 Timer lineLostTimer;
-Timer uturnTimer;
 Timer preDoneTimer;
 Timer seekLineBackTimer;
 
-void updateSeekLineBackTimer(State oldState, State newState) {
-  if (newState == SEEK_LINE_BACK) {
-    seekLineBackTimer.reset();
-    if (SEEK_LINE_BACK_MIN_MS > 0) {
-      seekLineBackTimer.start();
-    }
-  } else if (oldState == SEEK_LINE_BACK && seekLineBackTimer.running()) {
-    seekLineBackTimer.reset();
-  }
-}
+bool uturnReadyForBlack = false;
 
 unsigned long getLostMsForMode(RunMode mode) {
   switch (mode) {
@@ -189,8 +178,20 @@ void changeState(State newState,
   State oldState = state;
   prevState = state;
   state = newState;
+
+  if (oldState == SEEK_LINE_BACK && newState != SEEK_LINE_BACK) {
+    seekLineBackTimer.reset();
+  }
+  if (state == UTURN) {
+    uturnReadyForBlack = false;
+  }
   resetPidForState(newState);
   updateSeekLineBackTimer(oldState, newState);
+
+  if (state == SEEK_LINE_BACK) {
+    seekLineBackTimer.reset();
+    seekLineBackTimer.start();
+  }
 
   if (reason) {
     Serial.print(reason);
@@ -215,19 +216,6 @@ bool handleLineLostTimer(bool allWhite, unsigned long lostMs) {
   return false;
 }
 
-bool handleUTurnTimer() {
-  if (!uturnTimer.running()) {
-    uturnTimer.start();
-  }
-
-  if (uturnTimer.elapsed() > UTURN_TIME_MS) {
-    uturnTimer.reset();
-    return true;
-  }
-
-  return false;
-}
-
 bool handlePreDoneTimer() {
   if (!preDoneTimer.running()) {
     preDoneTimer.start();
@@ -241,13 +229,19 @@ bool handlePreDoneTimer() {
   return false;
 }
 
-void handleUTurn() {
-  if (!handleUTurnTimer()) {
-    setWheels(UTURN_SPEED_LEFT, UTURN_SPEED_RIGHT);
+void handleUTurn(const Sense& s) {
+  bool anyBlackFront = getAnyBlack(s, SensorPosition::Front);
+
+  if (!uturnReadyForBlack) {
+    if (!anyBlackFront) {
+      uturnReadyForBlack = true;
+    }
+  } else if (anyBlackFront) {
+    changeState(SEEK_LINE_FWD, F("UTURN complete"));
     return;
   }
 
-  changeState(SEEK_LINE_FWD, F("UTURN complete"));
+  setWheels(UTURN_SPEED_LEFT, UTURN_SPEED_RIGHT);
 }
 
 bool handleSeekLine(State followState, int speedSign, const Sense& s) {
@@ -256,17 +250,22 @@ bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   SensorPosition position = directionToSensorPosition(speedSign, s.mode);
   bool found = getAnyBlack(s, position);
   if (found) {
-    if (followState == FOLLOW_BACK && SEEK_LINE_BACK_MIN_MS > 0 &&
-        seekLineBackTimer.running() &&
-        seekLineBackTimer.elapsed() < SEEK_LINE_BACK_MIN_MS) {
-      return false;
+    bool canTransition = true;
+    if (state == SEEK_LINE_BACK) {
+      if (!seekLineBackTimer.running()) {
+        seekLineBackTimer.start();
+      }
+
+      if (seekLineBackTimer.elapsed() < SEEK_LINE_BACK_MIN_DURATION_MS) {
+        canTransition = false;
+      }
     }
-    if (followState == FOLLOW_BACK && seekLineBackTimer.running()) {
-      seekLineBackTimer.reset();
+
+    if (canTransition) {
+      const __FlashStringHelper* reason =
+        (followState == FOLLOW_FWD) ? F("Line found (forward)") : F("Line found (backward)");
+      changeState(followState, reason);
     }
-    const __FlashStringHelper* reason =
-      (followState == FOLLOW_FWD) ? F("Line found (forward)") : F("Line found (backward)");
-    changeState(followState, reason);
   }
 
   return found;
@@ -537,7 +536,7 @@ void loop() {
     }
 
     case UTURN: {
-      handleUTurn();
+      handleUTurn(s);
       break;
     }
 
