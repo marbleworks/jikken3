@@ -54,18 +54,18 @@ int   UTURN_SPEED_RIGHT = -150;  // Uターン時の右輪PWM（正で前進）
 unsigned long PRE_DONE_DURATION_MS = 100; // PRE_DONE時間（DONEの前に前進or後退）
 
 // 疑似距離と学習ラップ管理
-const float LOOP_DISTANCE_MARGIN_BEFORE = 200.0f;
-const float LOOP_DISTANCE_MARGIN_AFTER  = 120.0f;
-const float LOOP_DISTANCE_MERGE_GAP     = 120.0f;
-const float LOOP_CURVE_ENTER_ERROR      = 0.65f;
-const float LOOP_CURVE_EXIT_ERROR       = 0.35f;
-const int   LOOP_CURVE_PWM_LIMIT        = 150;
-const size_t LOOP_MAX_BRAKE_ZONES       = 8;
-const unsigned long CROSS_WINDOW_MS     = 100;
-const unsigned long CROSS_COOLDOWN_MS   = 250;
-const unsigned long CROSS_PAIR_TIMEOUT_MS = 900;
-const int   CROSS_THRESHOLD_OFFSET      = 70;
-const float CROSS_MAX_ERROR             = 0.55f;
+const float LOOP_DISTANCE_MARGIN_BEFORE = 200.0f;   // カーブ検出からどれだけ手前を減速開始とみなすか
+const float LOOP_DISTANCE_MARGIN_AFTER  = 120.0f;   // カーブ出口後に余韻として減速区間へ含める距離
+const float LOOP_DISTANCE_MERGE_GAP     = 120.0f;   // 近接した減速区間を一つに結合する距離しきい値
+const float LOOP_CURVE_ENTER_ERROR      = 0.65f;    // フロント偏差の絶対値がこの値以上で急カーブとして記録開始
+const float LOOP_CURVE_EXIT_ERROR       = 0.35f;    // 偏差がこの値を下回ったら記録中のカーブを終了
+const int   LOOP_CURVE_PWM_LIMIT        = 150;      // 先読み減速で制限する基準PWMの上限
+const size_t LOOP_MAX_BRAKE_ZONES       = 8;        // 記録できる急カーブ区間の最大数
+const unsigned long CROSS_WINDOW_MS     = 100;      // 十字線検出の観測ウィンドウ（全センサが黒判定されるまでの許容時間）
+const unsigned long CROSS_COOLDOWN_MS   = 250;      // 十字線検出後に再検出を抑制するクールタイム
+const unsigned long CROSS_PAIR_TIMEOUT_MS = 900;    // 1本目と2本目の十字線の最大間隔（ms）。超えるとノイズ扱い
+const int   CROSS_THRESHOLD_OFFSET      = 70;       // 通常しきい値との差分。十字線検出用に黒判定を緩める量
+const float CROSS_MAX_ERROR             = 0.55f;    // 走行偏差がこの値を超えているときは十字線とみなさない
 // ----------------------------------------------------------------
 
 // ====== struct をグローバルで定義 ======

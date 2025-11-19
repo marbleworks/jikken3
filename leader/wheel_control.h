@@ -11,5 +11,6 @@ void setWheelB(int speedSigned);
 // left>right → 右旋回（ω<0）、right>left → 左旋回（ω>0）
 void setWheels(int leftSpeed, int rightSpeed);
 
+// 直近に setWheels で指示された PWM 値を取得し、疑似距離積算やデバッグに利用する
 int getLastLeftCommand();
 int getLastRightCommand();
