@@ -186,6 +186,7 @@ void changeState(State newState,
     uturnReadyForBlack = false;
   }
   resetPidForState(newState);
+  updateSeekLineBackTimer(oldState, newState);
 
   if (state == SEEK_LINE_BACK) {
     seekLineBackTimer.reset();
