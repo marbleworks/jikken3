@@ -52,6 +52,20 @@ int   REC_STEER      = 240;    // リカバリ時の曲げ量（左右差）
 int   UTURN_SPEED_LEFT  = 70;   // Uターン時の左輪PWM（正で前進）
 int   UTURN_SPEED_RIGHT = -150;  // Uターン時の右輪PWM（正で前進）
 unsigned long PRE_DONE_DURATION_MS = 100; // PRE_DONE時間（DONEの前に前進or後退）
+
+// 疑似距離と学習ラップ管理
+const float LOOP_DISTANCE_MARGIN_BEFORE = 200.0f;
+const float LOOP_DISTANCE_MARGIN_AFTER  = 120.0f;
+const float LOOP_DISTANCE_MERGE_GAP     = 120.0f;
+const float LOOP_CURVE_ENTER_ERROR      = 0.65f;
+const float LOOP_CURVE_EXIT_ERROR       = 0.35f;
+const int   LOOP_CURVE_PWM_LIMIT        = 150;
+const size_t LOOP_MAX_BRAKE_ZONES       = 8;
+const unsigned long CROSS_WINDOW_MS     = 100;
+const unsigned long CROSS_COOLDOWN_MS   = 250;
+const unsigned long CROSS_PAIR_TIMEOUT_MS = 900;
+const int   CROSS_THRESHOLD_OFFSET      = 70;
+const float CROSS_MAX_ERROR             = 0.55f;
 // ----------------------------------------------------------------
 
 // ====== struct をグローバルで定義 ======
@@ -122,12 +136,219 @@ TravelProfile makeTravelProfile(int travelDir, SensorMode mode) {
 
 unsigned int endpointCount = 0;
 
+struct BrakeZone {
+  float start;
+  float end;
+};
+
+BrakeZone brakeZones[LOOP_MAX_BRAKE_ZONES];
+size_t brakeZoneCount = 0;
+float pseudoDistance = 0.0f;
+bool lapInitialized = false;
+bool learningLapActive = false;
+bool racingLapReady = false;
+int lapCount = 0;
+bool curveLearningActive = false;
+float curveLearningStartDist = 0.0f;
+unsigned long lastLooseBlackMs[Sense::MAX_FRONT_SENSORS] = {};
+unsigned long lastCrossLineMs = 0;
+bool waitingForSecondCross = false;
+unsigned long firstCrossLineMs = 0;
+float currentFrontError = 0.0f;
+bool currentFrontErrorValid = false;
+
 // 見失い管理
 Timer lineLostTimer;
 Timer preDoneTimer;
 Timer seekLineBackTimer;
 
 bool uturnReadyForBlack = false;
+
+void resetBrakeZones() {
+  brakeZoneCount = 0;
+  curveLearningActive = false;
+  curveLearningStartDist = 0.0f;
+}
+
+void addOrExtendBrakeZone(float start, float end) {
+  if (start < 0.0f) {
+    start = 0.0f;
+  }
+  if (end < start) {
+    end = start;
+  }
+
+  if (brakeZoneCount > 0) {
+    BrakeZone& last = brakeZones[brakeZoneCount - 1];
+    if ((start - last.end) < LOOP_DISTANCE_MERGE_GAP) {
+      last.start = min(last.start, start);
+      last.end = max(last.end, end);
+      return;
+    }
+  }
+
+  if (brakeZoneCount < LOOP_MAX_BRAKE_ZONES) {
+    brakeZones[brakeZoneCount].start = start;
+    brakeZones[brakeZoneCount].end = end;
+    ++brakeZoneCount;
+  }
+}
+
+bool isInBrakeZone(float position) {
+  for (size_t i = 0; i < brakeZoneCount; ++i) {
+    if (position >= brakeZones[i].start && position <= brakeZones[i].end) {
+      return true;
+    }
+  }
+  return false;
+}
+
+int applyLocationBaseLimit(int baseNominal) {
+  if (!lapInitialized || learningLapActive || !racingLapReady || brakeZoneCount == 0) {
+    return baseNominal;
+  }
+  if (isInBrakeZone(pseudoDistance)) {
+    return min(baseNominal, LOOP_CURVE_PWM_LIMIT);
+  }
+  return baseNominal;
+}
+
+void finalizeOpenCurveZone() {
+  if (!curveLearningActive) {
+    return;
+  }
+  float start = curveLearningStartDist;
+  float end = pseudoDistance + LOOP_DISTANCE_MARGIN_AFTER;
+  curveLearningActive = false;
+  addOrExtendBrakeZone(start, end);
+}
+
+void updateCurveLearning(float error) {
+  if (!lapInitialized || !learningLapActive) {
+    return;
+  }
+
+  float ae = fabsf(error);
+  if (!curveLearningActive) {
+    if (ae >= LOOP_CURVE_ENTER_ERROR) {
+      curveLearningActive = true;
+      curveLearningStartDist = max(0.0f, pseudoDistance - LOOP_DISTANCE_MARGIN_BEFORE);
+    }
+    return;
+  }
+
+  if (ae < LOOP_CURVE_EXIT_ERROR) {
+    finalizeOpenCurveZone();
+  }
+}
+
+void updatePseudoDistance() {
+  if (!lapInitialized || runMode != RUNMODE_LOOP) {
+    if (!lapInitialized) {
+      pseudoDistance = 0.0f;
+    }
+    return;
+  }
+
+  int left = getLastLeftCommand();
+  int right = getLastRightCommand();
+  if (left > 0 && right > 0) {
+    float avg = (abs(left) + abs(right)) * 0.5f;
+    pseudoDistance += avg;
+  }
+}
+
+bool detectCrossLine(const Sense& s, unsigned long now) {
+  if (s.frontCount == 0) {
+    return false;
+  }
+
+  int looseThreshold = THRESHOLD - CROSS_THRESHOLD_OFFSET;
+  if (looseThreshold < 0) {
+    looseThreshold = 0;
+  }
+
+  for (size_t i = 0; i < s.frontCount; ++i) {
+    if (s.rawFront[i] > looseThreshold) {
+      lastLooseBlackMs[i] = now;
+    }
+  }
+  for (size_t i = s.frontCount; i < Sense::MAX_FRONT_SENSORS; ++i) {
+    lastLooseBlackMs[i] = now;
+  }
+
+  for (size_t i = 0; i < s.frontCount; ++i) {
+    if (now - lastLooseBlackMs[i] > CROSS_WINDOW_MS) {
+      return false;
+    }
+  }
+
+  if (now - lastCrossLineMs < CROSS_COOLDOWN_MS) {
+    return false;
+  }
+  if (!currentFrontErrorValid || fabsf(currentFrontError) > CROSS_MAX_ERROR) {
+    return false;
+  }
+
+  lastCrossLineMs = now;
+  return true;
+}
+
+void handleLapBoundary() {
+  if (!lapInitialized) {
+    lapInitialized = true;
+    lapCount = 1;
+    learningLapActive = true;
+    racingLapReady = false;
+    resetBrakeZones();
+    pseudoDistance = 0.0f;
+    Serial.println(F("Lap sync: learning lap start"));
+    return;
+  }
+
+  if (learningLapActive) {
+    finalizeOpenCurveZone();
+    learningLapActive = false;
+    racingLapReady = (brakeZoneCount > 0);
+    ++lapCount;
+    pseudoDistance = 0.0f;
+    Serial.println(F("Lap sync: racing lap start"));
+    return;
+  }
+
+  ++lapCount;
+  pseudoDistance = 0.0f;
+}
+
+void updateLapDetection(const Sense& s) {
+  if (runMode != RUNMODE_LOOP) {
+    return;
+  }
+
+  if (state != FOLLOW_FWD) {
+    waitingForSecondCross = false;
+    return;
+  }
+
+  unsigned long now = millis();
+  if (!detectCrossLine(s, now)) {
+    if (waitingForSecondCross && (now - firstCrossLineMs > CROSS_PAIR_TIMEOUT_MS)) {
+      waitingForSecondCross = false;
+    }
+    return;
+  }
+
+  if (!waitingForSecondCross) {
+    waitingForSecondCross = true;
+    firstCrossLineMs = now;
+    return;
+  }
+
+  waitingForSecondCross = false;
+  if (now - firstCrossLineMs <= CROSS_PAIR_TIMEOUT_MS) {
+    handleLapBoundary();
+  }
+}
 
 unsigned long getLostMsForMode(RunMode mode) {
   switch (mode) {
@@ -178,6 +399,10 @@ void changeState(State newState,
   State oldState = state;
   prevState = state;
   state = newState;
+
+  if (learningLapActive && oldState == FOLLOW_FWD && newState != FOLLOW_FWD) {
+    finalizeOpenCurveZone();
+  }
 
   if (oldState == SEEK_LINE_BACK && newState != SEEK_LINE_BACK) {
     seekLineBackTimer.reset();
@@ -299,6 +524,12 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   float kd = profile.kd;
   int baseNominal = profile.baseNominal;
   int baseMin = profile.baseMin;
+  if (travelDir > 0) {
+    baseNominal = applyLocationBaseLimit(baseNominal);
+    if (baseNominal < baseMin) {
+      baseNominal = baseMin;
+    }
+  }
   int base = baseNominal;
   float& baseFiltered = profile.baseFiltered;
 
@@ -318,6 +549,21 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
     profile.pid.integral = 0.0f;
   }
   profile.pid.lastError = disableSteering ? 0.0f : e;
+
+  bool errorValid = (!disableSteering && !allWhite);
+  if (travelDir > 0) {
+    if (errorValid) {
+      currentFrontError = e;
+      currentFrontErrorValid = true;
+    } else {
+      currentFrontErrorValid = false;
+    }
+    if (errorValid) {
+      updateCurveLearning(e);
+    }
+  } else {
+    currentFrontErrorValid = false;
+  }
 
   if (!disableSteering) {
     float ae = fabsf(e);
@@ -490,6 +736,7 @@ void loop() {
 #if SENSOR_DEBUG_PRINT
   debugPrintSensors(s);
 #endif
+  currentFrontErrorValid = false;
   switch (state) {
     // 端点(全白)から前進して黒ラインを掴む
     case SEEK_LINE_FWD: {
@@ -551,6 +798,9 @@ void loop() {
       break;
     }
   }
+
+  updatePseudoDistance();
+  updateLapDetection(s);
 
   delay(5); // ループ安定化
 }

@@ -46,6 +46,11 @@ void setWheelB(int speedSigned) {
   setWheel(speedSigned, B_IN1, B_IN2, B_PWM);
 }
 
+namespace {
+int lastLeftCommand = 0;
+int lastRightCommand = 0;
+}
+
 void setWheels(int leftSpeed, int rightSpeed) {
   if (LEFT_IS_A) {
     setWheelA(leftSpeed);
@@ -54,4 +59,15 @@ void setWheels(int leftSpeed, int rightSpeed) {
     setWheelA(rightSpeed);
     setWheelB(leftSpeed);
   }
+
+  lastLeftCommand = leftSpeed;
+  lastRightCommand = rightSpeed;
+}
+
+int getLastLeftCommand() {
+  return lastLeftCommand;
+}
+
+int getLastRightCommand() {
+  return lastRightCommand;
 }
