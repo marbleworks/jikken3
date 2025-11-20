@@ -14,6 +14,11 @@ extern float LINE_EPS;
 
 extern RunMode runMode;
 
+// クロスライン検出デバッグ出力を有効化する場合は 1 に設定する。
+#ifndef CROSS_DEBUG_PRINT
+#define CROSS_DEBUG_PRINT 0
+#endif
+
 namespace {
 
 unsigned long lastLooseBlackMs[Sense::MAX_FRONT_SENSORS] = {};
@@ -251,29 +256,6 @@ bool detectCrossLinePair(const Sense& s,
                          unsigned long now,
                          float currentError,
                          bool errorValid,
-                         const CrossLineParams& params) {
-  if (waitingForSecondCross && (now - firstCrossLineMs > params.pairTimeoutMs)) {
-    waitingForSecondCross = false;
-  }
-
-  if (!detectCrossLine(s, now, currentError, errorValid, params)) {
-    return false;
-  }
-
-  if (!waitingForSecondCross) {
-    waitingForSecondCross = true;
-    firstCrossLineMs = now;
-    return false;
-  }
-
-  waitingForSecondCross = false;
-  return (now - firstCrossLineMs <= params.pairTimeoutMs);
-}
-
-int computeFrontBlackDirState(const Sense& s) {
-  if (s.frontCount == 0) {
-    return 0;
-  }
 
   bool left = false;
   bool right = false;

@@ -17,6 +17,19 @@
 #define PID_DEBUG_PRINT 0
 #endif
 
+// 学習ラップデバッグ出力を有効化する場合は 1 に設定する。
+#ifndef LEARNING_DEBUG_PRINT
+#define LEARNING_DEBUG_PRINT 0
+#endif
+
+// クロスライン検出デバッグ出力を有効化する場合は 1 に設定する。
+#ifndef CROSS_DEBUG_PRINT
+#define CROSS_DEBUG_PRINT 0
+#endif
+
+// 距離補正（キャリブレーション）を有効化する場合は 1 に設定する
+#define ENABLE_DISTANCE_CALIBRATION 1
+
 // ------------------ チューニング用パラメータ ------------------
 int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
 int   HYST           = 40;    // ヒステリシス
@@ -54,25 +67,24 @@ int   UTURN_SPEED_RIGHT = -150;  // Uターン時の右輪PWM（正で前進）
 unsigned long PRE_DONE_DURATION_MS = 100; // PRE_DONE時間（DONEの前に前進or後退）
 
 // 疑似距離と学習ラップ管理
-const float LOOP_DISTANCE_MARGIN_BEFORE = 200.0f;   // カーブ検出からどれだけ手前を減速開始とみなすか
+const float LOOP_DISTANCE_MARGIN_BEFORE = 100.0f;   // カーブ検出からどれだけ手前を減速開始とみなすか（バケツ方式なので少し短めに調整）
 const float LOOP_DISTANCE_MARGIN_AFTER  = 120.0f;   // カーブ出口後に余韻として減速区間へ含める距離
 const float LOOP_DISTANCE_MERGE_GAP     = 120.0f;   // 近接した減速区間を一つに結合する距離しきい値
-const float LOOP_CURVE_ENTER_ERROR      = 0.65f;    // フロント偏差の絶対値がこの値以上で急カーブとして記録開始
-const float LOOP_CURVE_EXIT_ERROR       = 0.35f;    // 偏差がこの値を下回ったら記録中のカーブを終了
-const int   LOOP_CURVE_PWM_LIMIT        = 150;      // 先読み減速で制限する基準PWMの上限
-const size_t LOOP_MAX_BRAKE_ZONES       = 8;        // 記録できる急カーブ区間の最大数
-const unsigned long CROSS_WINDOW_MS     = 100;      // 十字線検出の観測ウィンドウ（全センサが黒判定されるまでの許容時間）
-const unsigned long CROSS_COOLDOWN_MS   = 250;      // 十字線検出後に再検出を抑制するクールタイム
-const unsigned long CROSS_PAIR_TIMEOUT_MS = 900;    // 1本目と2本目の十字線の最大間隔（ms）。超えるとノイズ扱い
-const int   CROSS_THRESHOLD_OFFSET      = 70;       // 通常しきい値との差分。十字線検出用に黒判定を緩める量
-const float CROSS_MAX_ERROR             = 0.55f;    // 走行偏差がこの値を超えているときは十字線とみなさない
-CrossLineParams crossLineParams{CROSS_WINDOW_MS, CROSS_COOLDOWN_MS, CROSS_PAIR_TIMEOUT_MS, CROSS_THRESHOLD_OFFSET, CROSS_MAX_ERROR};
-// ----------------------------------------------------------------
+const float CROSS_LINES_DISTANCE_MM     = 240.0f;   // 2本の十字線の間の物理距離(mm)
 
-// ====== struct をグローバルで定義 ======
-struct FollowResult {
-  bool lineLost;
-};
+// PWM差によるカーブ検出パラメータ（リーキーバケット方式）
+const float LOOP_CURVE_BUCKET_THRESHOLD = 2000.0f;  // カーブ確定とするバケツの蓄積量
+const float LOOP_CURVE_BUCKET_DECAY     = 10.0f;    // 毎ループ減衰させる量
+const int   LOOP_CURVE_PWM_DIFF_MIN     = 20;       // バケツに入れ始める最小のPWM差（不感帯）
+
+// カーブ種別判定用のPWM差しきい値（カーブ確定後のレベル分けに使用）
+const int   LOOP_CURVE_DIFF_GENTLE      = 60;       // ゆるカーブとみなす左右PWM差
+const int   LOOP_CURVE_DIFF_SHARP       = 120;      // 急カーブとみなす左右PWM差
+
+// カーブ種別ごとの制限速度
+const int   LOOP_CURVE_PWM_GENTLE       = 180;      // ゆるカーブ時の制限PWM
+const int   LOOP_CURVE_PWM_SHARP        = 120;      // 急カーブ時の制限PWM
+
 // =================================================================
 
 enum State {
@@ -137,9 +149,16 @@ TravelProfile makeTravelProfile(int travelDir, SensorMode mode) {
 
 unsigned int endpointCount = 0;
 
+enum CurveLevel : uint8_t {
+  CURVE_NONE = 0,
+  CURVE_GENTLE = 1,
+  CURVE_SHARP = 2
+};
+
 struct BrakeZone {
   float start;
   float end;
+  CurveLevel level;
 };
 
 BrakeZone brakeZones[LOOP_MAX_BRAKE_ZONES];
@@ -149,8 +168,20 @@ bool lapInitialized = false;
 bool learningLapActive = false;
 bool racingLapReady = false;
 int lapCount = 0;
+
+// キャリブレーション用変数
+float distanceCorrectionFactor = 1.0f; // 距離補正係数（1.0 = 補正なし）
+unsigned long baseCrossDuration = 0;   // 基準となるクロスライン通過時間（1周目）
+
+// カーブ学習用の一時変数
 bool curveLearningActive = false;
 float curveLearningStartDist = 0.0f;
+CurveLevel currentCurveMaxLevel = CURVE_NONE; // 検出中のカーブの最大強度
+
+// リーキーバケット用変数
+float curveDetectionBucket = 0.0f;
+float bucketStartDist = -1.0f; // バケツが溜まり始めた地点（-1は未設定）
+
 float currentFrontError = 0.0f;
 bool currentFrontErrorValid = false;
 int lastLeftCommand = 0;
@@ -167,9 +198,12 @@ void resetBrakeZones() {
   brakeZoneCount = 0;
   curveLearningActive = false;
   curveLearningStartDist = 0.0f;
+  currentCurveMaxLevel = CURVE_NONE;
+  curveDetectionBucket = 0.0f;
+  bucketStartDist = -1.0f;
 }
 
-void addOrExtendBrakeZone(float start, float end) {
+void addOrExtendBrakeZone(float start, float end, CurveLevel level) {
   if (start < 0.0f) {
     start = 0.0f;
   }
@@ -182,6 +216,10 @@ void addOrExtendBrakeZone(float start, float end) {
     if ((start - last.end) < LOOP_DISTANCE_MERGE_GAP) {
       last.start = min(last.start, start);
       last.end = max(last.end, end);
+      // マージする場合は、より厳しいレベル（数値が大きい方）を採用する
+      if (level > last.level) {
+        last.level = level;
+      }
       return;
     }
   }
@@ -189,17 +227,35 @@ void addOrExtendBrakeZone(float start, float end) {
   if (brakeZoneCount < LOOP_MAX_BRAKE_ZONES) {
     brakeZones[brakeZoneCount].start = start;
     brakeZones[brakeZoneCount].end = end;
+    brakeZones[brakeZoneCount].level = level;
     ++brakeZoneCount;
+#if LEARNING_DEBUG_PRINT
+    Serial.print(F("[LEARN] Zone ADDED: "));
+    Serial.print(start);
+    Serial.print(F(" - "));
+    Serial.print(end);
+    Serial.print(F(" (Lvl "));
+    Serial.print(level);
+    Serial.println(F(")"));
+#endif
   }
 }
 
-bool isInBrakeZone(float position) {
+CurveLevel getBrakeZoneLevel(float position) {
+  // 該当するゾーンの中で最も厳しいレベルを返す（重なっている場合は稀だが念のため）
+  CurveLevel maxLvl = CURVE_NONE;
   for (size_t i = 0; i < brakeZoneCount; ++i) {
     if (position >= brakeZones[i].start && position <= brakeZones[i].end) {
-      return true;
+      if (brakeZones[i].level > maxLvl) {
+        maxLvl = brakeZones[i].level;
+      }
     }
   }
-  return false;
+  return maxLvl;
+}
+
+bool isInBrakeZone(float position) {
+  return getBrakeZoneLevel(position) != CURVE_NONE;
 }
 
 void recordWheelCommands(int leftSpeed, int rightSpeed) {
@@ -219,9 +275,14 @@ int applyLocationBaseLimit(int baseNominal) {
   if (!lapInitialized || learningLapActive || !racingLapReady || brakeZoneCount == 0) {
     return baseNominal;
   }
-  if (isInBrakeZone(pseudoDistance)) {
-    return min(baseNominal, LOOP_CURVE_PWM_LIMIT);
+  
+  CurveLevel lvl = getBrakeZoneLevel(pseudoDistance);
+  if (lvl == CURVE_SHARP) {
+    return min(baseNominal, LOOP_CURVE_PWM_SHARP);
+  } else if (lvl == CURVE_GENTLE) {
+    return min(baseNominal, LOOP_CURVE_PWM_GENTLE);
   }
+  
   return baseNominal;
 }
 
@@ -231,27 +292,103 @@ void finalizeOpenCurveZone() {
   }
   float start = curveLearningStartDist;
   float end = pseudoDistance + LOOP_DISTANCE_MARGIN_AFTER;
+  
+  addOrExtendBrakeZone(start, end, currentCurveMaxLevel);
+  
   curveLearningActive = false;
-  addOrExtendBrakeZone(start, end);
+  currentCurveMaxLevel = CURVE_NONE;
 }
 
-void updateCurveLearning(float error) {
+void updateCurveLearning() {
   if (!lapInitialized || !learningLapActive) {
     return;
   }
 
-  float ae = fabsf(error);
-  if (!curveLearningActive) {
-    if (ae >= LOOP_CURVE_ENTER_ERROR) {
-      curveLearningActive = true;
-      curveLearningStartDist = max(0.0f, pseudoDistance - LOOP_DISTANCE_MARGIN_BEFORE);
+  // PWM差分によるカーブ検出（リーキーバケット方式）
+  int left = getLastLeftCommand();
+  int right = getLastRightCommand();
+  // 前進中のみ評価
+  if (left < 0 || right < 0) return;
+
+  int pwmDiff = abs(left - right);
+
+  // 1. バケツへの蓄積・減衰
+  if (pwmDiff >= LOOP_CURVE_PWM_DIFF_MIN) {
+    curveDetectionBucket += (float)pwmDiff;
+    // バケツが空から増え始めた瞬間を記録
+    if (bucketStartDist < 0.0f) {
+      bucketStartDist = pseudoDistance;
     }
+  }
+  
+  curveDetectionBucket -= LOOP_CURVE_BUCKET_DECAY;
+  if (curveDetectionBucket < 0.0f) {
+    curveDetectionBucket = 0.0f;
+    // バケツが空になったら開始地点メモもリセット（ノイズだったとみなす）
+    if (!curveLearningActive) {
+      bucketStartDist = -1.0f;
+    }
+  }
+
+  // 2. カーブレベルの瞬時判定（分類用）
+  CurveLevel instantLevel = CURVE_NONE;
+  if (pwmDiff >= LOOP_CURVE_DIFF_SHARP) {
+    instantLevel = CURVE_SHARP;
+  } else if (pwmDiff >= LOOP_CURVE_DIFF_GENTLE) {
+    instantLevel = CURVE_GENTLE;
+  }
+
+  // 3. カーブ開始・継続・終了判定
+  if (!curveLearningActive) {
+    // バケツがしきい値を超えたらカーブ確定
+    if (curveDetectionBucket >= LOOP_CURVE_BUCKET_THRESHOLD) {
+      curveLearningActive = true;
+      // 溜まり始めの地点を採用（マージンも考慮）
+      float startDist = (bucketStartDist >= 0.0f) ? bucketStartDist : pseudoDistance;
+      curveLearningStartDist = max(0.0f, startDist - LOOP_DISTANCE_MARGIN_BEFORE);
+      
+      // 初期レベル設定
+      currentCurveMaxLevel = (instantLevel != CURVE_NONE) ? instantLevel : CURVE_GENTLE;
+#if LEARNING_DEBUG_PRINT
+      Serial.print(F("[LEARN] Curve START at "));
+      Serial.print(pseudoDistance);
+      Serial.print(F(" (Bucket start: "));
+      Serial.print(startDist);
+      Serial.println(F(")"));
+#endif
+    }
+  } else {
+    // カーブ継続中：最大レベルを更新
+    if (instantLevel > currentCurveMaxLevel) {
+      currentCurveMaxLevel = instantLevel;
+#if LEARNING_DEBUG_PRINT
+      Serial.print(F("[LEARN] Level UP -> "));
+      Serial.println(currentCurveMaxLevel);
+#endif
+    }
+
+    // カーブ終了判定：バケツが十分小さくなったら終了（ヒステリシスとしてしきい値の半分を使用）
+    if (curveDetectionBucket < (LOOP_CURVE_BUCKET_THRESHOLD * 0.5f)) {
+#if LEARNING_DEBUG_PRINT
+      Serial.println(F("[LEARN] Curve END"));
+#endif
+      finalizeOpenCurveZone();
+      // 次のカーブのためにリセット
+      bucketStartDist = -1.0f;
+  }
+
+  if (learningLapActive) {
+    finalizeOpenCurveZone();
+    learningLapActive = false;
+    racingLapReady = (brakeZoneCount > 0);
+    ++lapCount;
+    pseudoDistance = 0.0f;
+    Serial.println(F("Lap sync: racing lap start"));
     return;
   }
 
-  if (ae < LOOP_CURVE_EXIT_ERROR) {
-    finalizeOpenCurveZone();
-  }
+  ++lapCount;
+  pseudoDistance = 0.0f;
 }
 
 void updatePseudoDistance() {
@@ -265,12 +402,49 @@ void updatePseudoDistance() {
   int left = getLastLeftCommand();
   int right = getLastRightCommand();
   if (left > 0 && right > 0) {
-    float avg = (abs(left) + abs(right)) * 0.5f;
-    pseudoDistance += avg;
+    // 左右の平均PWMを距離として扱う
+    float currentSpeed = (float)(abs(left) + abs(right)) / 2.0f;
+    
+#if ENABLE_DISTANCE_CALIBRATION
+    pseudoDistance += currentSpeed * distanceCorrectionFactor;
+#else
+    pseudoDistance += currentSpeed;
+#endif
   }
 }
 
-void handleLapBoundary() {
+
+void handleLapBoundary(unsigned long crossDuration) {
+#if ENABLE_DISTANCE_CALIBRATION
+    if (crossDuration > 0) {
+      if (!lapInitialized) {
+        // スタート時
+      } else if (lapCount == 1) {
+        // 1周目終了時：基準として保存
+        baseCrossDuration = crossDuration;
+        distanceCorrectionFactor = 1.0f;
+        Serial.print(F("[CALIB] Base Duration Set: "));
+        Serial.print(baseCrossDuration);
+        Serial.println(F(" ms"));
+      } else {
+        // 2周目以降
+        if (baseCrossDuration > 0) {
+          distanceCorrectionFactor = (float)baseCrossDuration / (float)crossDuration;
+          
+          if (distanceCorrectionFactor < 0.5f) distanceCorrectionFactor = 0.5f;
+          if (distanceCorrectionFactor > 2.0f) distanceCorrectionFactor = 2.0f;
+          
+          Serial.print(F("[CALIB] Duration: "));
+          Serial.print(crossDuration);
+          Serial.print(F(" ms (Base: "));
+          Serial.print(baseCrossDuration);
+          Serial.print(F(") -> Factor: "));
+          Serial.println(distanceCorrectionFactor);
+        }
+      }
+    }
+#endif
+
   if (!lapInitialized) {
     lapInitialized = true;
     lapCount = 1;
@@ -308,8 +482,9 @@ void updateLapDetection(const Sense& s) {
   }
 
   unsigned long now = millis();
-  if (detectCrossLinePair(s, now, currentFrontError, currentFrontErrorValid, crossLineParams)) {
-    handleLapBoundary();
+  unsigned long crossDuration = 0;
+  if (detectCrossLinePair(s, now, currentFrontError, currentFrontErrorValid, crossLineParams, &crossDuration)) {
+    handleLapBoundary(crossDuration);
   }
 }
 
@@ -522,7 +697,7 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
       currentFrontErrorValid = false;
     }
     if (errorValid) {
-      updateCurveLearning(e);
+      updateCurveLearning();
     }
   } else {
     currentFrontErrorValid = false;

@@ -15,19 +15,44 @@
 5. **偏差制限**：走行偏差が `CROSS_MAX_ERROR` を超えている場合は十字線判定を無効化し、急カーブ中の誤検出を防ぎます。
 
 ## 学習ラップ（1周目）
-- `learningLapActive` が真の間は従来の PID + 誤差減速で安全に周回しつつ、急カーブ候補を探索します。
-- 前方誤差の絶対値が `LOOP_CURVE_ENTER_ERROR` を超えると区間記録を開始し、`LOOP_DISTANCE_MARGIN_BEFORE` だけ手前をブレーキ開始距離に含めます。
-- 偏差が `LOOP_CURVE_EXIT_ERROR` を下回ったら区間を閉じ、`LOOP_DISTANCE_MARGIN_AFTER` を出口側へ加算します。
-- 近い距離の区間は `LOOP_DISTANCE_MERGE_GAP` 以下であればマージし、最大 `LOOP_MAX_BRAKE_ZONES` 件まで保存します。
+- `learningLapActive` が真の間は、従来の PID + 誤差減速で安全に周回しつつ、急カーブ候補を探索します。
+- **カーブ検出ロジック（リーキーバケット方式）**:
+    - **蓄積**: 左右PWM差が `LOOP_CURVE_PWM_DIFF_MIN` を超えると、差分をバケツ（`curveDetectionBucket`）に加算します。
+    - **減衰**: 毎ループ `LOOP_CURVE_BUCKET_DECAY` ずつバケツから減らします。
+    - **開始地点の特定**: バケツが空の状態から増え始めた地点を `bucketStartDist` として記憶します。途中でバケツが空になったらリセット（ノイズ扱い）します。
+    - **カーブ確定**: バケツの中身が `LOOP_CURVE_BUCKET_THRESHOLD` を超えたらカーブと判定し、記憶しておいた `bucketStartDist` を開始地点として採用します。
+- **レベル分類**:
+    - **ゆるカーブ (Level 1)**: PWM差が `LOOP_CURVE_DIFF_GENTLE` 以上
+    - **急カーブ (Level 2)**: PWM差が `LOOP_CURVE_DIFF_SHARP` 以上
+    - カーブ区間中の最大レベルをその区間のレベルとして記録します。
+- **終了判定**: バケツの中身がしきい値の半分を下回ったらカーブ終了とみなします。
 
 ## 本気ラップ（2周目以降）
 - ラップ開始時に `racingLapReady` が真であれば、記録済み区間を参照して先読み減速を有効にします。
-- `pseudoDistance` がブレーキ区間内にあるときは基準PWMを `LOOP_CURVE_PWM_LIMIT` 以下へクリップし、それ以外は `BASE_FWD` の値を許可します。
+- `pseudoDistance` がブレーキ区間内にあるとき、その区間のレベルに応じて基準PWMを制限します。
+    - **ゆるカーブ区間**: `LOOP_CURVE_PWM_GENTLE` 以下へ制限
+    - **急カーブ区間**: `LOOP_CURVE_PWM_SHARP` 以下へ制限
 - センサ偏差に基づく緊急減速ロジックは従来通り残しているため、予測が外れても安全に減速できます。
 
 ## 調整の目安
-- **クロスラインしきい値**：センサ感度やコース塗装によって `CROSS_THRESHOLD_OFFSET` を調整してください。
-- **減速マージン**：コース幅や速度によって `LOOP_DISTANCE_MARGIN_BEFORE/AFTER` を広げたり狭めたりします。
-- **速度制限**：`LOOP_CURVE_PWM_LIMIT` を上げると立ち上がりが速くなりますが、曲率によってはオーバーシュートする可能性があります。
+- **デバッグログ**:
+    - `LEARNING_DEBUG_PRINT 1`: カーブ検知やゾーン記録の様子をシリアルモニタに出力します。
+    - `CROSS_DEBUG_PRINT 1`: 十字線検出のプロセスを出力します。
+- **バケツ感度**:
+    - `LOOP_CURVE_BUCKET_THRESHOLD`: 小さくすると反応が早くなりますが、ノイズを拾いやすくなります。
+    - `LOOP_CURVE_BUCKET_DECAY`: 大きくすると、断続的なPWM差（PID制御による振動など）がつながりにくくなります。
+
+## 距離補正（キャリブレーション）
+バッテリー電圧の低下などによる速度変化を補正するため、**スタートライン（2本の十字線）の通過時間** を計測して距離のカウント方法を自動調整します。
+- **仕組み**:
+    1. 1周目（学習ラップ）の通過時間を「基準」として記録します。
+    2. 2周目以降、通過時間が長くなれば（＝遅くなれば）、その分だけ距離のカウントを遅くします。
+- **設定**:
+    - `ENABLE_DISTANCE_CALIBRATION 1`: 有効化（デフォルト）
+    - `CROSS_LINES_DISTANCE_MM`: 十字線間の物理距離（デフォルト 240mm）
+- **カーブ判定**:
+    - `LOOP_CURVE_DIFF_GENTLE / SHARP`: カーブのきつさ（レベル）を決めるしきい値です。
+- **制限速度**:
+    - `LOOP_CURVE_PWM_GENTLE / SHARP`: 各レベルでの制限速度です。
 
 以上を踏まえ、学習ラップで得た知識を本気ラップに活用し、コース全体で安定かつ高速な走行を実現します。
