@@ -4,6 +4,8 @@
 #include "run_mode.h"
 #include "sensor_leds.h"
 
+#include <math.h>
+
 extern int THRESHOLD;
 extern int HYST;
 extern float LINE_WHITE;
@@ -12,7 +14,75 @@ extern float LINE_EPS;
 
 extern RunMode runMode;
 
+// クロスライン検出デバッグ出力を有効化する場合は 1 に設定する。
+#ifndef CROSS_DEBUG_PRINT
+#define CROSS_DEBUG_PRINT 0
+#endif
+
 namespace {
+
+unsigned long lastLooseBlackMs[Sense::MAX_FRONT_SENSORS] = {};
+unsigned long lastCrossLineMs = 0;
+bool waitingForSecondCross = false;
+unsigned long firstCrossLineMs = 0;
+
+bool detectCrossLine(const Sense& s,
+                     unsigned long now,
+                     float currentError,
+                     bool errorValid,
+                     const CrossLineParams& params) {
+  if (s.frontCount == 0) {
+    return false;
+  }
+
+  int looseThreshold = THRESHOLD - params.thresholdOffset;
+  if (looseThreshold < 0) {
+    looseThreshold = 0;
+  }
+
+#if CROSS_DEBUG_PRINT
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint > 100) {
+    lastPrint = millis();
+    Serial.print(F("[CROSS_CHK] Sensors: "));
+    for (size_t i = 0; i < s.frontCount; ++i) {
+      Serial.print(s.rawFront[i]);
+      if (i < s.frontCount - 1) Serial.print(F(", "));
+    }
+    Serial.print(F(" | Threshold: "));
+    Serial.print(looseThreshold);
+    Serial.print(F(" | Error: "));
+    Serial.print(currentError);
+    Serial.print(F(" | Valid: "));
+    Serial.println(errorValid ? F("Y") : F("N"));
+  }
+#endif
+
+  for (size_t i = 0; i < s.frontCount; ++i) {
+    if (s.rawFront[i] > looseThreshold) {
+      lastLooseBlackMs[i] = now;
+    }
+  }
+  for (size_t i = s.frontCount; i < Sense::MAX_FRONT_SENSORS; ++i) {
+    lastLooseBlackMs[i] = now;
+  }
+
+  for (size_t i = 0; i < s.frontCount; ++i) {
+    if (now - lastLooseBlackMs[i] > params.windowMs) {
+      return false;
+    }
+  }
+
+  if (now - lastCrossLineMs < params.cooldownMs) {
+    return false;
+  }
+  if (!errorValid || fabsf(currentError) > params.maxError) {
+    return false;
+  }
+
+  lastCrossLineMs = now;
+  return true;
+}
 
 SensorMode determineSensorMode() {
   return (runMode == RUNMODE_LOOP) ? SensorMode::Front5 : SensorMode::Front3Rear2;
@@ -191,13 +261,70 @@ void debugPrintSensors(const Sense& s) {
   Serial.println(s.lastBlackDirStateRear);
 }
 
-int computeFrontBlackDirState(const Sense& s) {
-  if (s.frontCount == 0) {
-    return 0;
+void resetCrossLineDetector() {
+  waitingForSecondCross = false;
+  firstCrossLineMs = 0;
+  lastCrossLineMs = 0;
+  for (size_t i = 0; i < Sense::MAX_FRONT_SENSORS; ++i) {
+    lastLooseBlackMs[i] = 0;
+  }
+}
+
+bool detectCrossLinePair(const Sense& s,
+                         unsigned long now,
+                         float currentError,
+                         bool errorValid,
+                         const CrossLineParams& params,
+                         unsigned long* outDurationMs) {
+  if (detectCrossLine(s, now, currentError, errorValid, params)) {
+    if (!waitingForSecondCross) {
+      waitingForSecondCross = true;
+      firstCrossLineMs = now;
+#if CROSS_DEBUG_PRINT
+      Serial.print(F("1st line at "));
+      Serial.println(now);
+#endif
+    } else {
+      // 2本目検出
+      unsigned long duration = now - firstCrossLineMs;
+      if (duration <= params.pairTimeoutMs) {
+        waitingForSecondCross = false;
+        if (outDurationMs) {
+          *outDurationMs = duration;
+        }
+#if CROSS_DEBUG_PRINT
+        Serial.print(F("2nd line at "));
+        Serial.print(now);
+        Serial.print(F(" (dt="));
+        Serial.print(duration);
+        Serial.println(F(") -> CROSS DETECTED"));
+#endif
+        return true;
+      } else {
+        // タイムアウト（1本目とみなす）
+        firstCrossLineMs = now;
+#if CROSS_DEBUG_PRINT
+        Serial.print(F("Timeout, restart 1st at "));
+        Serial.println(now);
+#endif
+      }
+    }
   }
 
-  bool left = false;
-  bool right = false;
+  // タイムアウト監視
+  if (waitingForSecondCross && (now - firstCrossLineMs > params.pairTimeoutMs)) {
+    waitingForSecondCross = false;
+#if CROSS_DEBUG_PRINT
+    Serial.println(F("Pair timeout reset"));
+#endif
+  }
+
+  return false;
+}
+
+int computeFrontBlackDirState(const Sense& s) {
+  bool isLeft = false;
+  bool isRight = false;
   bool center = false;
   size_t mid = s.frontCount / 2;
 
@@ -206,21 +333,21 @@ int computeFrontBlackDirState(const Sense& s) {
       continue;
     }
     if (i < mid) {
-      left = true;
+      isLeft = true;
     } else if (i > mid) {
-      right = true;
+      isRight = true;
     } else {
       center = true;
     }
   }
 
-  if (left && !right) {
+  if (isLeft && !isRight) {
     return -1;
   }
-  if (right && !left) {
+  if (isRight && !isLeft) {
     return +1;
   }
-  if (center || (left && right)) {
+  if (center || (isLeft && isRight)) {
     return 0;
   }
   return 0;
