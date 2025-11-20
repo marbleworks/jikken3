@@ -10,7 +10,3 @@ void setWheelB(int speedSigned);
 // 左右同時設定（LEFT_IS_Aに合わせて割当）
 // left>right → 右旋回（ω<0）、right>left → 左旋回（ω>0）
 void setWheels(int leftSpeed, int rightSpeed);
-
-// 直近に setWheels で指示された PWM 値を取得し、疑似距離積算やデバッグに利用する
-int getLastLeftCommand();
-int getLastRightCommand();

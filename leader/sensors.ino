@@ -4,6 +4,8 @@
 #include "run_mode.h"
 #include "sensor_leds.h"
 
+#include <math.h>
+
 extern int THRESHOLD;
 extern int HYST;
 extern float LINE_WHITE;
@@ -13,6 +15,51 @@ extern float LINE_EPS;
 extern RunMode runMode;
 
 namespace {
+
+unsigned long lastLooseBlackMs[Sense::MAX_FRONT_SENSORS] = {};
+unsigned long lastCrossLineMs = 0;
+bool waitingForSecondCross = false;
+unsigned long firstCrossLineMs = 0;
+
+bool detectCrossLine(const Sense& s,
+                     unsigned long now,
+                     float currentError,
+                     bool errorValid,
+                     const CrossLineParams& params) {
+  if (s.frontCount == 0) {
+    return false;
+  }
+
+  int looseThreshold = THRESHOLD - params.thresholdOffset;
+  if (looseThreshold < 0) {
+    looseThreshold = 0;
+  }
+
+  for (size_t i = 0; i < s.frontCount; ++i) {
+    if (s.rawFront[i] > looseThreshold) {
+      lastLooseBlackMs[i] = now;
+    }
+  }
+  for (size_t i = s.frontCount; i < Sense::MAX_FRONT_SENSORS; ++i) {
+    lastLooseBlackMs[i] = now;
+  }
+
+  for (size_t i = 0; i < s.frontCount; ++i) {
+    if (now - lastLooseBlackMs[i] > params.windowMs) {
+      return false;
+    }
+  }
+
+  if (now - lastCrossLineMs < params.cooldownMs) {
+    return false;
+  }
+  if (!errorValid || fabsf(currentError) > params.maxError) {
+    return false;
+  }
+
+  lastCrossLineMs = now;
+  return true;
+}
 
 SensorMode determineSensorMode() {
   return (runMode == RUNMODE_LOOP) ? SensorMode::Front5 : SensorMode::Front3Rear2;
@@ -189,6 +236,38 @@ void debugPrintSensors(const Sense& s) {
   Serial.print(s.lastBlackStateFront);
   Serial.print(F(" lastR="));
   Serial.println(s.lastBlackDirStateRear);
+}
+
+void resetCrossLineDetector() {
+  waitingForSecondCross = false;
+  firstCrossLineMs = 0;
+  lastCrossLineMs = 0;
+  for (size_t i = 0; i < Sense::MAX_FRONT_SENSORS; ++i) {
+    lastLooseBlackMs[i] = 0;
+  }
+}
+
+bool detectCrossLinePair(const Sense& s,
+                         unsigned long now,
+                         float currentError,
+                         bool errorValid,
+                         const CrossLineParams& params) {
+  if (waitingForSecondCross && (now - firstCrossLineMs > params.pairTimeoutMs)) {
+    waitingForSecondCross = false;
+  }
+
+  if (!detectCrossLine(s, now, currentError, errorValid, params)) {
+    return false;
+  }
+
+  if (!waitingForSecondCross) {
+    waitingForSecondCross = true;
+    firstCrossLineMs = now;
+    return false;
+  }
+
+  waitingForSecondCross = false;
+  return (now - firstCrossLineMs <= params.pairTimeoutMs);
 }
 
 int computeFrontBlackDirState(const Sense& s) {

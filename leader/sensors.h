@@ -12,6 +12,14 @@ enum class SensorPosition {
   Rear,
 };
 
+struct CrossLineParams {
+  unsigned long windowMs;
+  unsigned long cooldownMs;
+  unsigned long pairTimeoutMs;
+  int thresholdOffset;
+  float maxError;
+};
+
 struct Sense {
   static constexpr size_t MAX_FRONT_SENSORS = 5;
   static constexpr size_t MAX_REAR_SENSORS = 2;
@@ -51,4 +59,10 @@ bool getAllWhite(const Sense& s, SensorPosition position);
 float computeError(const Sense& s, SensorPosition position);
 SensorPosition directionToSensorPosition(int direction, SensorMode mode);
 void debugPrintSensors(const Sense& s);
+void resetCrossLineDetector();
+bool detectCrossLinePair(const Sense& s,
+                         unsigned long now,
+                         float currentError,
+                         bool errorValid,
+                         const CrossLineParams& params);
 

@@ -66,6 +66,7 @@ const unsigned long CROSS_COOLDOWN_MS   = 250;      // 十字線検出後に再�
 const unsigned long CROSS_PAIR_TIMEOUT_MS = 900;    // 1本目と2本目の十字線の最大間隔（ms）。超えるとノイズ扱い
 const int   CROSS_THRESHOLD_OFFSET      = 70;       // 通常しきい値との差分。十字線検出用に黒判定を緩める量
 const float CROSS_MAX_ERROR             = 0.55f;    // 走行偏差がこの値を超えているときは十字線とみなさない
+CrossLineParams crossLineParams{CROSS_WINDOW_MS, CROSS_COOLDOWN_MS, CROSS_PAIR_TIMEOUT_MS, CROSS_THRESHOLD_OFFSET, CROSS_MAX_ERROR};
 // ----------------------------------------------------------------
 
 // ====== struct をグローバルで定義 ======
@@ -150,12 +151,10 @@ bool racingLapReady = false;
 int lapCount = 0;
 bool curveLearningActive = false;
 float curveLearningStartDist = 0.0f;
-unsigned long lastLooseBlackMs[Sense::MAX_FRONT_SENSORS] = {};
-unsigned long lastCrossLineMs = 0;
-bool waitingForSecondCross = false;
-unsigned long firstCrossLineMs = 0;
 float currentFrontError = 0.0f;
 bool currentFrontErrorValid = false;
+int lastLeftCommand = 0;
+int lastRightCommand = 0;
 
 // 見失い管理
 Timer lineLostTimer;
@@ -201,6 +200,19 @@ bool isInBrakeZone(float position) {
     }
   }
   return false;
+}
+
+void recordWheelCommands(int leftSpeed, int rightSpeed) {
+  lastLeftCommand = leftSpeed;
+  lastRightCommand = rightSpeed;
+}
+
+int getLastLeftCommand() { return lastLeftCommand; }
+int getLastRightCommand() { return lastRightCommand; }
+
+void commandWheels(int leftSpeed, int rightSpeed) {
+  recordWheelCommands(leftSpeed, rightSpeed);
+  setWheels(leftSpeed, rightSpeed);
 }
 
 int applyLocationBaseLimit(int baseNominal) {
@@ -258,42 +270,6 @@ void updatePseudoDistance() {
   }
 }
 
-bool detectCrossLine(const Sense& s, unsigned long now) {
-  if (s.frontCount == 0) {
-    return false;
-  }
-
-  int looseThreshold = THRESHOLD - CROSS_THRESHOLD_OFFSET;
-  if (looseThreshold < 0) {
-    looseThreshold = 0;
-  }
-
-  for (size_t i = 0; i < s.frontCount; ++i) {
-    if (s.rawFront[i] > looseThreshold) {
-      lastLooseBlackMs[i] = now;
-    }
-  }
-  for (size_t i = s.frontCount; i < Sense::MAX_FRONT_SENSORS; ++i) {
-    lastLooseBlackMs[i] = now;
-  }
-
-  for (size_t i = 0; i < s.frontCount; ++i) {
-    if (now - lastLooseBlackMs[i] > CROSS_WINDOW_MS) {
-      return false;
-    }
-  }
-
-  if (now - lastCrossLineMs < CROSS_COOLDOWN_MS) {
-    return false;
-  }
-  if (!currentFrontErrorValid || fabsf(currentFrontError) > CROSS_MAX_ERROR) {
-    return false;
-  }
-
-  lastCrossLineMs = now;
-  return true;
-}
-
 void handleLapBoundary() {
   if (!lapInitialized) {
     lapInitialized = true;
@@ -322,30 +298,17 @@ void handleLapBoundary() {
 
 void updateLapDetection(const Sense& s) {
   if (runMode != RUNMODE_LOOP) {
+    resetCrossLineDetector();
     return;
   }
 
   if (state != FOLLOW_FWD) {
-    waitingForSecondCross = false;
+    resetCrossLineDetector();
     return;
   }
 
   unsigned long now = millis();
-  if (!detectCrossLine(s, now)) {
-    if (waitingForSecondCross && (now - firstCrossLineMs > CROSS_PAIR_TIMEOUT_MS)) {
-      waitingForSecondCross = false;
-    }
-    return;
-  }
-
-  if (!waitingForSecondCross) {
-    waitingForSecondCross = true;
-    firstCrossLineMs = now;
-    return;
-  }
-
-  waitingForSecondCross = false;
-  if (now - firstCrossLineMs <= CROSS_PAIR_TIMEOUT_MS) {
+  if (detectCrossLinePair(s, now, currentFrontError, currentFrontErrorValid, crossLineParams)) {
     handleLapBoundary();
   }
 }
@@ -466,12 +429,12 @@ void handleUTurn(const Sense& s) {
     return;
   }
 
-  setWheels(UTURN_SPEED_LEFT, UTURN_SPEED_RIGHT);
+  commandWheels(UTURN_SPEED_LEFT, UTURN_SPEED_RIGHT);
 }
 
 bool handleSeekLine(State followState, int speedSign, const Sense& s) {
   int speed = speedSign * SEEK_SPEED;
-  setWheels(speed, speed);
+  commandWheels(speed, speed);
   SensorPosition position = directionToSensorPosition(speedSign, s.mode);
   bool found = getAnyBlack(s, position);
   if (found) {
@@ -589,7 +552,7 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
 
   int left  = constrain(base + corr, MIN_PWM, MAX_PWM) * dirSign;
   int right = constrain(base - corr, MIN_PWM, MAX_PWM) * dirSign;
-  setWheels(left, right);
+  commandWheels(left, right);
 
 #if PID_DEBUG_PRINT
   // PID制御関連のデバッグ出力
@@ -616,7 +579,7 @@ void recoverLine(const Sense& s, int basePwm, int travelDir) {
 
   if (travelDir < 0 && s.mode == SensorMode::Front5) {
     int speed = constrain(basePwm, MIN_PWM, MAX_PWM) * dirSign;
-    setWheels(speed, speed);
+    commandWheels(speed, speed);
     return;
   }
 
@@ -634,7 +597,7 @@ void recoverLine(const Sense& s, int basePwm, int travelDir) {
   int left = constrain(basePwm + steerOffset, MIN_PWM, MAX_PWM) * dirSign;
   int right = constrain(basePwm - steerOffset, MIN_PWM, MAX_PWM) * dirSign;
 
-  setWheels(left, right);
+  commandWheels(left, right);
 }
 
 bool handleRecover(const Sense& s, State followState, int basePwm, int travelDir) {
@@ -709,7 +672,7 @@ void handleBackwardLineLost() {
 void handlePreDone() {
   if (!handlePreDoneTimer()) {
     if (prevState == FOLLOW_FWD) {
-      setWheels(BASE_FWD, BASE_FWD);
+      commandWheels(BASE_FWD, BASE_FWD);
     }
 
     return;
@@ -793,7 +756,7 @@ void loop() {
     }
 
     case DONE: {
-      setWheels(0, 0); // 完全停止
+      commandWheels(0, 0); // 完全停止
       // 必要ならスリープやLED表示など
       break;
     }
