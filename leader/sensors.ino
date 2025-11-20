@@ -40,6 +40,24 @@ bool detectCrossLine(const Sense& s,
     looseThreshold = 0;
   }
 
+#if CROSS_DEBUG_PRINT
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint > 100) {
+    lastPrint = millis();
+    Serial.print(F("[CROSS_CHK] Sensors: "));
+    for (size_t i = 0; i < s.frontCount; ++i) {
+      Serial.print(s.rawFront[i]);
+      if (i < s.frontCount - 1) Serial.print(F(", "));
+    }
+    Serial.print(F(" | Threshold: "));
+    Serial.print(looseThreshold);
+    Serial.print(F(" | Error: "));
+    Serial.print(currentError);
+    Serial.print(F(" | Valid: "));
+    Serial.println(errorValid ? F("Y") : F("N"));
+  }
+#endif
+
   for (size_t i = 0; i < s.frontCount; ++i) {
     if (s.rawFront[i] > looseThreshold) {
       lastLooseBlackMs[i] = now;
@@ -256,9 +274,57 @@ bool detectCrossLinePair(const Sense& s,
                          unsigned long now,
                          float currentError,
                          bool errorValid,
+                         const CrossLineParams& params,
+                         unsigned long* outDurationMs) {
+  if (detectCrossLine(s, now, currentError, errorValid, params)) {
+    if (!waitingForSecondCross) {
+      waitingForSecondCross = true;
+      firstCrossLineMs = now;
+#if CROSS_DEBUG_PRINT
+      Serial.print(F("1st line at "));
+      Serial.println(now);
+#endif
+    } else {
+      // 2本目検出
+      unsigned long duration = now - firstCrossLineMs;
+      if (duration <= params.pairTimeoutMs) {
+        waitingForSecondCross = false;
+        if (outDurationMs) {
+          *outDurationMs = duration;
+        }
+#if CROSS_DEBUG_PRINT
+        Serial.print(F("2nd line at "));
+        Serial.print(now);
+        Serial.print(F(" (dt="));
+        Serial.print(duration);
+        Serial.println(F(") -> CROSS DETECTED"));
+#endif
+        return true;
+      } else {
+        // タイムアウト（1本目とみなす）
+        firstCrossLineMs = now;
+#if CROSS_DEBUG_PRINT
+        Serial.print(F("Timeout, restart 1st at "));
+        Serial.println(now);
+#endif
+      }
+    }
+  }
 
-  bool left = false;
-  bool right = false;
+  // タイムアウト監視
+  if (waitingForSecondCross && (now - firstCrossLineMs > params.pairTimeoutMs)) {
+    waitingForSecondCross = false;
+#if CROSS_DEBUG_PRINT
+    Serial.println(F("Pair timeout reset"));
+#endif
+  }
+
+  return false;
+}
+
+int computeFrontBlackDirState(const Sense& s) {
+  bool isLeft = false;
+  bool isRight = false;
   bool center = false;
   size_t mid = s.frontCount / 2;
 
@@ -267,21 +333,21 @@ bool detectCrossLinePair(const Sense& s,
       continue;
     }
     if (i < mid) {
-      left = true;
+      isLeft = true;
     } else if (i > mid) {
-      right = true;
+      isRight = true;
     } else {
       center = true;
     }
   }
 
-  if (left && !right) {
+  if (isLeft && !isRight) {
     return -1;
   }
-  if (right && !left) {
+  if (isRight && !isLeft) {
     return +1;
   }
-  if (center || (left && right)) {
+  if (center || (isLeft && isRight)) {
     return 0;
   }
   return 0;

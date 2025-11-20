@@ -53,61 +53,6 @@ int computeFrontBlackDirState(const Sense& s);
 int computeRearBlackDirState(const Sense& s);
 int getBlackDirState(const Sense& s, SensorPosition position);
 int getLastBlackDirState(const Sense& s, SensorPosition position);
-#pragma once
-
-#include <Arduino.h>
-
-enum class SensorMode {
-  Front5,
-  Front3Rear2,
-};
-
-enum class SensorPosition {
-  Front,
-  Rear,
-};
-
-struct CrossLineParams {
-  unsigned long windowMs;
-  unsigned long cooldownMs;
-  unsigned long pairTimeoutMs;
-  int thresholdOffset;
-  float maxError;
-};
-
-struct Sense {
-  static constexpr size_t MAX_FRONT_SENSORS = 5;
-  static constexpr size_t MAX_REAR_SENSORS = 2;
-
-  SensorMode mode;
-  size_t frontCount;
-  size_t rearCount;
-
-  int rawFront[MAX_FRONT_SENSORS];
-  bool isBlackFront[MAX_FRONT_SENSORS];
-  int rawRear[MAX_REAR_SENSORS];
-  bool isBlackRear[MAX_REAR_SENSORS];
-
-  bool anyBlackFront;
-  bool allBlackFront;
-  bool allWhiteFront;
-  bool anyBlackRear;
-  bool allBlackRear;
-  bool allWhiteRear;
-  bool anyBlack;
-  bool allBlack;
-  bool allWhite;
-  int frontBlackDirState;
-  int rearBlackDirState;
-  int lastBlackStateFront;
-  int lastBlackDirStateRear;
-};
-
-Sense readSensors();
-int computeFrontBlackDirState(const Sense& s);
-int computeRearBlackDirState(const Sense& s);
-int getBlackDirState(const Sense& s, SensorPosition position);
-int getLastBlackDirState(const Sense& s, SensorPosition position);
 bool getAnyBlack(const Sense& s, SensorPosition position);
 bool getAllBlack(const Sense& s, SensorPosition position);
 bool getAllWhite(const Sense& s, SensorPosition position);
