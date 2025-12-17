@@ -19,10 +19,6 @@ float DistanceSensor::readDistanceCm() const
   }
 
   float distance = duration / 58.0f;
-  if (distance > maxDistance)
-  {
-    return NAN;
-  }
   return distance;
 }
 
@@ -34,6 +30,6 @@ long DistanceSensor::pingMicroseconds() const
   delayMicroseconds(10);
   digitalWrite(trig, LOW);
 
-  const unsigned long timeoutUs = (unsigned long)(maxDistance * 58.0f * 2.0f);
+  const unsigned long timeoutUs = (unsigned long)(maxDistance * 58.0f);
   return pulseIn(echo, HIGH, timeoutUs);
 }

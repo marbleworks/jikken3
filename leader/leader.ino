@@ -17,16 +17,29 @@
 #define PID_DEBUG_PRINT 0
 #endif
 
+// 先導機モードを有効化する場合は 1 に設定する。
+#ifndef LEADER_MODE
+#define LEADER_MODE 1
+#endif
+
 // ------------------ チューニング用パラメータ ------------------
 int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
 int   HYST           = 40;    // ヒステリシス
-int   BASE_FWD       = 255;   // 前進の基準PWM
+#if LEADER_MODE
+int   BASE_FWD       = 60;    // 先導機: 前進の基準PWM（遅め）
+#else
+int   BASE_FWD       = 255;    // 通常: 前進の基準PWM
+#endif
 int   BASE_BACK      = 200;   // 後退の基準PWM
 int   BASE_FWD_MIN   = 100;   // カーブ時に減速してもこの値以下にはしない
 int   BASE_BACK_MIN  = 100;   // 後退時の最低PWM
 float BASE_SPEED_ALPHA_ACCEL = 0.15f; // 直線復帰時の加速レスポンス
 float BASE_SPEED_ALPHA_DECEL = 1.0f;  // カーブ時の減速レスポンス
-float KP_FWD         = 0.35f;  // 前進Pゲイン
+#if LEADER_MODE
+float KP_FWD         = 0.10f;  // 先導機: 前進Pゲイン（控えめ）
+#else
+float KP_FWD         = 0.35f;  // 通常: 前進Pゲイン
+#endif
 float KP_BACK        = 0.3f;  // 後退Pゲイン
 float KI_FWD         = 0.005f;  // 前進Iゲイン
 float KI_BACK        = 0.005f;  // 後退Iゲイン
@@ -186,7 +199,6 @@ void changeState(State newState,
     uturnReadyForBlack = false;
   }
   resetPidForState(newState);
-  updateSeekLineBackTimer(oldState, newState);
 
   if (state == SEEK_LINE_BACK) {
     seekLineBackTimer.reset();
