@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <math.h>
 
 #include "distance_sensor.h"
 #include "obstacle_sensor.h"
@@ -14,7 +15,7 @@
 
 // ------------------ 制御パラメータ ------------------
 const int BASE_PWM = 255;           // 固定の前進速度
-const int TURN_PWM = 75;            // 旋回時のPWM差分
+const int TURN_PWM = 160;            // 旋回時のPWM差分
 const float LOST_THRESHOLD_CM = 30.0f;  // 見失い閾値
 const float MAX_DISTANCE_CM = 40.0f;
 
@@ -22,12 +23,20 @@ const uint8_t MIN_PWM = 0;
 const uint8_t MAX_PWM = 255;
 const uint8_t DEAD_PWM = 30;
 
-const size_t MOVING_AVG_SIZE = 5;
+const size_t MOVING_AVG_SIZE = 1;
 
-const unsigned long SONAR_INTERVAL_MS = 60;
+const unsigned long SONAR_INTERVAL_MS = 70;
 const unsigned long LCD_UPDATE_MS     = 200;  // LCD更新間隔（ドット応答速度に合わせる）
-const unsigned long RECOVER_TIMEOUT_MS = 500; // リカバリモードに移行するまでの時間
-const int RECOVER_TURN_PWM = 120;             // リカバリ時の旋回PWM差分
+const unsigned long RECOVER_TIMEOUT_MS = 0; // リカバリモードに移行するまでの時間
+const int RECOVER_TURN_PWM = 160;             // リカバリ時の旋回PWM差分
+
+// ------------------ PID制御パラメータ ------------------
+float KP = 0.5f;             // 比例ゲイン（距離差 → 補正量）
+float KI = 0.0f;             // 積分ゲイン
+float KD = 0.03f;            // 微分ゲイン
+float PID_I_LIMIT = 50.0f;   // 積分項の上限
+float CORR_EXP = 1.0f;       // 補正量の非線形指数（1で線形）
+int   CORR_MAX = 100;        // 補正量の最大PWM値
 
 // ------------------ モジュール初期化 ------------------
 WheelControl wheelController({PIN_LEFT_IN1, PIN_LEFT_IN2, PIN_LEFT_PWM,
@@ -41,15 +50,76 @@ LCDDisplay lcdDisplay(PIN_LCD_RS, PIN_LCD_E, PIN_LCD_D4, PIN_LCD_D5, PIN_LCD_D6,
 // ------------------ 状態変数 ------------------
 unsigned long lastPingTime     = 0;
 unsigned long lastLcdTime      = 0;
-float        lastLeftDistance  = 0.0f;
-float        lastRightDistance = 0.0f;
+float        lastLeftDistance  = MAX_DISTANCE_CM;  // 初期値は検知なし
+float        lastRightDistance = MAX_DISTANCE_CM; // 初期値は検知なし
 float        rawLeftDistance   = NAN;  // センサ生値（LCD表示用）
 float        rawRightDistance  = NAN;  // センサ生値（LCD表示用）
 int          lastDetectDirection = 0;  // 最後に検知した方向 (+1:右, -1:左, 0:両方/なし)
 unsigned long turnStartTime    = 0;    // 旋回開始時刻（片方見失い or 両方見失い）
+bool         readLeftNext      = true; // 次に読むセンサー（交互読み取り用）
+
+// ------------------ PID状態 ------------------
+struct PIDState {
+  float integral;
+  float lastError;
+  unsigned long lastTimeMs;
+};
+PIDState pidState = {0.0f, 0.0f, 0};
 
 MovingAverage<MOVING_AVG_SIZE> leftDistanceFilter;
 MovingAverage<MOVING_AVG_SIZE> rightDistanceFilter;
+
+// ------------------ PID制御関数 ------------------
+// 両方検知時に左右距離差をエラーとしてPID制御を行う
+// 戻り値: 補正量（正=右に曲がる、負=左に曲がる）
+int computePidCorrection(float leftDist, float rightDist)
+{
+  // エラー: 左距離 - 右距離（正=リーダーが右寄り→右に曲がる）
+  // 右が近い→error正→左輪加速・右輪減速→右に曲がる
+  float error = leftDist - rightDist;
+
+  unsigned long now = millis();
+  float dt = 0.0f;
+  if (pidState.lastTimeMs != 0)
+  {
+    dt = (now - pidState.lastTimeMs) / 1000.0f;
+  }
+  pidState.lastTimeMs = now;
+
+  // 積分項
+  if (dt > 0.0f)
+  {
+    pidState.integral += error * dt;
+    pidState.integral = constrain(pidState.integral, -PID_I_LIMIT, PID_I_LIMIT);
+  }
+
+  // 微分項
+  float derivative = 0.0f;
+  if (dt > 0.0f)
+  {
+    derivative = (error - pidState.lastError) / dt;
+  }
+  pidState.lastError = error;
+
+  // PID出力
+  float output = KP * error + KI * pidState.integral + KD * derivative;
+
+  // leaderと同じ方式: 正規化 → 非線形変換 → スケーリング
+  float corrNorm = constrain(output, -1.0f, 1.0f);
+  float corrMagnitude = powf(fabsf(corrNorm), CORR_EXP);
+  float corrScaled = copysignf(corrMagnitude, corrNorm);
+  int corr = (int)(corrScaled * (float)CORR_MAX);
+
+  return corr;
+}
+
+// PID状態をリセット
+void resetPidState()
+{
+  pidState.integral = 0.0f;
+  pidState.lastError = 0.0f;
+  pidState.lastTimeMs = 0;
+}
 
 void setup()
 {
@@ -67,37 +137,38 @@ void loop()
 {
   unsigned long now = millis();
 
-  // センサ読み取り（常に実行）
+  // センサ読み取り（交互に片方ずつ読んで停止時間を短縮）
   if (now - lastPingTime >= SONAR_INTERVAL_MS)
   {
     // モーターを一時停止してノイズを排除
     wheelController.stop();
     delayMicroseconds(500);
 
-    float leftDistance = leftDistanceSensor.readDistanceCm();
-    delay(5);
-    float rightDistance = rightDistanceSensor.readDistanceCm();
+    if (readLeftNext)
+    {
+      float leftDistance = leftDistanceSensor.readDistanceCm();
+      rawLeftDistance = leftDistance;
+      bool leftValid = !isnan(leftDistance);
+      float leftValue = leftValid ? leftDistance : MAX_DISTANCE_CM;
+      lastLeftDistance = leftDistanceFilter.add(leftValue);
+    }
+    else
+    {
+      float rightDistance = rightDistanceSensor.readDistanceCm();
+      rawRightDistance = rightDistance;
+      bool rightValid = !isnan(rightDistance);
+      float rightValue = rightValid ? rightDistance : MAX_DISTANCE_CM;
+      lastRightDistance = rightDistanceFilter.add(rightValue);
+    }
+
+    readLeftNext = !readLeftNext;
     lastPingTime = now;
-
-    // 生値を保存（LCD表示用）
-    rawLeftDistance = leftDistance;
-    rawRightDistance = rightDistance;
-
-    bool leftValid = !isnan(leftDistance);
-    bool rightValid = !isnan(rightDistance);
-
-    // NANは最大距離として扱う（何も検出できない＝遠い）
-    float leftValue = leftValid ? leftDistance : MAX_DISTANCE_CM;
-    float rightValue = rightValid ? rightDistance : MAX_DISTANCE_CM;
-
-    lastLeftDistance = leftDistanceFilter.add(leftValue);
-    lastRightDistance = rightDistanceFilter.add(rightValue);
   }
 
   // LCD表示更新（独立した間隔で）
   if (now - lastLcdTime >= LCD_UPDATE_MS)
   {
-    lcdDisplay.showDistances(rawLeftDistance, rawRightDistance);
+    lcdDisplay.showDistances(rawLeftDistance, rawRightDistance, lastDetectDirection);
     lastLcdTime = now;
   }
 
@@ -114,13 +185,34 @@ void loop()
     lastDetectDirection = turnDirection;
   }
 
-  // 旋回PWMの計算
+  // 状態判定
   bool bothLost = (rightDetect == 0 && leftDetect == 0);
+  bool bothDetected = (rightDetect == 1 && leftDetect == 1);
   bool oneLost = (turnDirection != 0);  // 片方だけ検出
   int currentTurnPwm = TURN_PWM;
+  int pidCorr = 0;
 
-  if (bothLost || oneLost)
+  if (bothDetected)
   {
+    // 両方検出時: PID制御を適用
+    turnStartTime = 0;
+    pidCorr = computePidCorrection(lastLeftDistance, lastRightDistance);
+    // 距離差から方向を記憶（見失い時のリカバリ用）
+    if (lastLeftDistance > lastRightDistance)
+    {
+      lastDetectDirection = 1;  // 右寄り
+    }
+    else if (lastLeftDistance < lastRightDistance)
+    {
+      lastDetectDirection = -1; // 左寄り
+    }
+  }
+  else if (bothLost || oneLost)
+  {
+    // 片方または両方見失い: リカバリモード
+    // PID状態をリセット
+    resetPidState();
+
     // 旋回開始時刻を記録
     if (turnStartTime == 0)
     {
@@ -140,16 +232,11 @@ void loop()
       currentTurnPwm = TURN_PWM + (int)((RECOVER_TURN_PWM - TURN_PWM) * ratio);
     }
 
-    // 両方見失った場合は最後に検知していた方向に曲がる
+    // 両方見失った場合は右旋回
     if (bothLost)
     {
-      turnDirection = lastDetectDirection;
+      turnDirection = 1;  // 常に右旋回
     }
-  }
-  else
-  {
-    // 両方検出したらリセット
-    turnStartTime = 0;
   }
 
   bool irDetected = obstacleSensor.detected();
@@ -160,10 +247,18 @@ void loop()
   {
     wheelController.stop();
   }
+  else if (bothDetected)
+  {
+    // 両方検知時: PID制御で追従
+    leftPwm = constrain(BASE_PWM + pidCorr, MIN_PWM, MAX_PWM);
+    rightPwm = constrain(BASE_PWM - pidCorr, MIN_PWM, MAX_PWM);
+    wheelController.drive(leftPwm, rightPwm);
+  }
   else
   {
-    leftPwm = BASE_PWM + turnDirection * currentTurnPwm;
-    rightPwm = BASE_PWM - turnDirection * currentTurnPwm;
+    // 片方検知 or 見失い: 従来の旋回制御
+    leftPwm = constrain(BASE_PWM + turnDirection * currentTurnPwm, MIN_PWM, MAX_PWM);
+    rightPwm = constrain(BASE_PWM - turnDirection * currentTurnPwm, MIN_PWM, MAX_PWM);
     wheelController.drive(leftPwm, rightPwm);
   }
 
@@ -179,6 +274,8 @@ void loop()
   Serial.print(lastRightDistance);
   Serial.print(F("\tTurn:"));
   Serial.print(turnDirection);
+  Serial.print(F("\tPID:"));
+  Serial.print(pidCorr);
   Serial.print(F("\tLPWM:"));
   Serial.print(leftPwm);
   Serial.print(F("\tRPWM:"));

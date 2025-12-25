@@ -7,24 +7,30 @@ void LCDDisplay::begin() {
   lcd.begin(8, 2);  // 8文字 x 2行
 }
 
-void LCDDisplay::showDistances(float left, float right) {
-  // 1行目: "L:XXX.X" または "L:---" (左距離)
+void LCDDisplay::showDistances(float left, float right, int lastDir) {
+  // 方向表示文字: +1=右(>), -1=左(<), 0=なし( )
+  char dirChar = ' ';
+  if (lastDir > 0) dirChar = '>';
+  else if (lastDir < 0) dirChar = '<';
+
+  // 1行目: "L:XX.X D" (左距離 + 方向)
   lcd.setCursor(0, 0);
   lcd.print("L:");
   if (isnan(left)) {
-    lcd.print("---   ");
+    lcd.print("--- ");
   } else {
     lcd.print(left, 1);
-    lcd.print("  ");
   }
+  lcd.setCursor(7, 0);
+  lcd.print(dirChar);
 
-  // 2行目: "R:XXX.X" または "R:---" (右距離)
+  // 2行目: "R:XX.X" (右距離)
   lcd.setCursor(0, 1);
   lcd.print("R:");
   if (isnan(right)) {
-    lcd.print("---   ");
+    lcd.print("---  ");
   } else {
     lcd.print(right, 1);
-    lcd.print("  ");
+    lcd.print(" ");
   }
 }
