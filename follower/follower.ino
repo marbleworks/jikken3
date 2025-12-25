@@ -13,8 +13,8 @@
 #endif
 
 // ------------------ 制御パラメータ ------------------
-const int BASE_PWM = 100;           // 固定の前進速度
-const int TURN_PWM = 50;            // 旋回時のPWM差分
+const int BASE_PWM = 255;           // 固定の前進速度
+const int TURN_PWM = 75;            // 旋回時のPWM差分
 const float LOST_THRESHOLD_CM = 30.0f;  // 見失い閾値
 const float MAX_DISTANCE_CM = 40.0f;
 
@@ -26,6 +26,8 @@ const size_t MOVING_AVG_SIZE = 5;
 
 const unsigned long SONAR_INTERVAL_MS = 60;
 const unsigned long LCD_UPDATE_MS     = 200;  // LCD更新間隔（ドット応答速度に合わせる）
+const unsigned long RECOVER_TIMEOUT_MS = 500; // リカバリモードに移行するまでの時間
+const int RECOVER_TURN_PWM = 120;             // リカバリ時の旋回PWM差分
 
 // ------------------ モジュール初期化 ------------------
 WheelControl wheelController({PIN_LEFT_IN1, PIN_LEFT_IN2, PIN_LEFT_PWM,
@@ -43,6 +45,8 @@ float        lastLeftDistance  = 0.0f;
 float        lastRightDistance = 0.0f;
 float        rawLeftDistance   = NAN;  // センサ生値（LCD表示用）
 float        rawRightDistance  = NAN;  // センサ生値（LCD表示用）
+int          lastDetectDirection = 0;  // 最後に検知した方向 (+1:右, -1:左, 0:両方/なし)
+unsigned long turnStartTime    = 0;    // 旋回開始時刻（片方見失い or 両方見失い）
 
 MovingAverage<MOVING_AVG_SIZE> leftDistanceFilter;
 MovingAverage<MOVING_AVG_SIZE> rightDistanceFilter;
@@ -104,6 +108,50 @@ void loop()
   // 旋回値: 右検出+1, 左検出-1
   int turnDirection = rightDetect - leftDetect;
 
+  // 片方だけ検出している場合、その方向を記憶
+  if (turnDirection != 0)
+  {
+    lastDetectDirection = turnDirection;
+  }
+
+  // 旋回PWMの計算
+  bool bothLost = (rightDetect == 0 && leftDetect == 0);
+  bool oneLost = (turnDirection != 0);  // 片方だけ検出
+  int currentTurnPwm = TURN_PWM;
+
+  if (bothLost || oneLost)
+  {
+    // 旋回開始時刻を記録
+    if (turnStartTime == 0)
+    {
+      turnStartTime = now;
+    }
+
+    // 経過時間に応じて旋回量を増加（TURN_PWM → RECOVER_TURN_PWM）
+    unsigned long elapsed = now - turnStartTime;
+    if (elapsed >= RECOVER_TIMEOUT_MS)
+    {
+      currentTurnPwm = RECOVER_TURN_PWM;
+    }
+    else
+    {
+      // 線形補間: TURN_PWM から RECOVER_TURN_PWM へ徐々に増加
+      float ratio = (float)elapsed / RECOVER_TIMEOUT_MS;
+      currentTurnPwm = TURN_PWM + (int)((RECOVER_TURN_PWM - TURN_PWM) * ratio);
+    }
+
+    // 両方見失った場合は最後に検知していた方向に曲がる
+    if (bothLost)
+    {
+      turnDirection = lastDetectDirection;
+    }
+  }
+  else
+  {
+    // 両方検出したらリセット
+    turnStartTime = 0;
+  }
+
   bool irDetected = obstacleSensor.detected();
   int leftPwm = 0;
   int rightPwm = 0;
@@ -114,8 +162,8 @@ void loop()
   }
   else
   {
-    leftPwm = BASE_PWM + turnDirection * TURN_PWM;
-    rightPwm = BASE_PWM - turnDirection * TURN_PWM;
+    leftPwm = BASE_PWM + turnDirection * currentTurnPwm;
+    rightPwm = BASE_PWM - turnDirection * currentTurnPwm;
     wheelController.drive(leftPwm, rightPwm);
   }
 

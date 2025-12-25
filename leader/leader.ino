@@ -14,7 +14,7 @@
 
 // PID制御デバッグ出力を有効化する場合は 1 に設定する。
 #ifndef PID_DEBUG_PRINT
-#define PID_DEBUG_PRINT 0
+#define PID_DEBUG_PRINT 1
 #endif
 
 // 先導機モードを有効化する場合は 1 に設定する。
@@ -26,7 +26,7 @@
 int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
 int   HYST           = 40;    // ヒステリシス
 #if LEADER_MODE
-int   BASE_FWD       = 60;    // 先導機: 前進の基準PWM（遅め）
+int   BASE_FWD       = 255;    // 先導機: 前進の基準PWM（遅め）
 #else
 int   BASE_FWD       = 255;    // 通常: 前進の基準PWM
 #endif
@@ -36,22 +36,23 @@ int   BASE_BACK_MIN  = 100;   // 後退時の最低PWM
 float BASE_SPEED_ALPHA_ACCEL = 0.15f; // 直線復帰時の加速レスポンス
 float BASE_SPEED_ALPHA_DECEL = 1.0f;  // カーブ時の減速レスポンス
 #if LEADER_MODE
-float KP_FWD         = 0.10f;  // 先導機: 前進Pゲイン（控えめ）
+float KP_FWD         = 0.35f;  // 先導機: 前進Pゲイン（控えめ）
 #else
 float KP_FWD         = 0.35f;  // 通常: 前進Pゲイン
 #endif
 float KP_BACK        = 0.3f;  // 後退Pゲイン
-float KI_FWD         = 0.005f;  // 前進Iゲイン
+float KI_FWD         = 0.0f;  // 前進Iゲイン
 float KI_BACK        = 0.005f;  // 後退Iゲイン
-float KD_FWD         = 0.031f;  // 前進Dゲイン
+float KD_FWD         = 0.038f;  // 前進Dゲイン
 float KD_BACK        = 0.04f;  // 後退Dゲイン
-float CURVE_E_GAIN   = 0.058f;   // 誤差に対する減速係数
+float CURVE_E_GAIN   = 0.0f;   // 誤差に対する減速係数
 float CURVE_E_EXP    = 1.5f;   // 誤差に対する減速の非線形指数（1で線形）
-float CURVE_D_GAIN   = 1.0f;   // 変化量に対する減速係数
-float CORR_EXP       = 1.5f;   // 補正量の非線形指数（1で線形）
+float CURVE_D_GAIN   = 0.0f;   // 変化量に対する減速係数
+float CORR_EXP       = 1.1f;   // 補正量の非線形指数（1で線形）
+int   CORR_MAX       = 414;    // 補正量の最大PWM値（MAX_PWMとは独立して調整可能）
 float PID_I_LIMIT    = 1.0f;  // I項アンチワインドアップ上限
-float LINE_WHITE     = 40.0f;   // センサ白レベル
-float LINE_BLACK     = 900.0f;  // センサ黒レベル
+float LINE_WHITE     = 100.0f;   // センサ白レベル
+float LINE_BLACK     = 800.0f;  // センサ黒レベル
 float LINE_EPS       = 1e-3f;   // 全白判定のしきい値
 int   MAX_PWM        = 255;   // PWM上限
 int   MIN_PWM        = -1;     // PWM下限
@@ -349,7 +350,7 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
   float corrNorm = constrain(output, -1.0f, 1.0f);
   float corrMagnitude = powf(fabsf(corrNorm), CORR_EXP);
   float corrScaled = copysignf(corrMagnitude, corrNorm);
-  int corr = (int)(corrScaled * 255.0f);
+  int corr = (int)(corrScaled * (float)CORR_MAX);
 
   int dirSign    = (travelDir >= 0) ? 1 : -1;
 
@@ -359,16 +360,20 @@ FollowResult runLineTraceCommon(const Sense& s, int travelDir) {
 
 #if PID_DEBUG_PRINT
   // PID制御関連のデバッグ出力
-  Serial.print("BASE_FWD:");      Serial.print(BASE_FWD);      Serial.print("\t");
-  Serial.print("BASE_FWD_MIN:");  Serial.print(BASE_FWD_MIN);  Serial.print("\t");
-  Serial.print("targetBase:");   Serial.print(targetBase);   Serial.print("\t");
-  Serial.print("baseFiltered:"); Serial.print(baseFiltered); Serial.print("\t");
-  Serial.print("baseNominal:");  Serial.print(baseNominal);  Serial.print("\t");
-  Serial.print("baseMin:");      Serial.print(baseMin);      Serial.print("\t");
+  // Serial.print("BASE_FWD:");      Serial.print(BASE_FWD);      Serial.print("\t");
+  // Serial.print("BASE_FWD_MIN:");  Serial.print(BASE_FWD_MIN);  Serial.print("\t");
+  // Serial.print("targetBase:");   Serial.print(targetBase);   Serial.print("\t");
+  // Serial.print("baseFiltered:"); Serial.print(baseFiltered); Serial.print("\t");
+  
+  // constrainの効果を確認するため、outputとcorrNormのみを出力
+  // 基準線として +/- 1.0 も出力する
   Serial.print("error:");        Serial.print(e);            Serial.print("\t");
-  Serial.print("integral:");     Serial.print(profile.pid.integral); Serial.print("\t");
-  Serial.print("derivative:");   Serial.print(derivative);   Serial.print("\t");
-  Serial.print("corr:");         Serial.print(corr);         Serial.print("\t");
+  Serial.print("min:-1.0");      Serial.print("\t");
+  Serial.print("max:1.0");       Serial.print("\t");
+  Serial.print("output:");       Serial.print(output);       Serial.print("\t");
+  Serial.print("corrNorm:");     Serial.print(corrNorm);     Serial.print("\t");
+  Serial.print("corrScaled:");   Serial.print(corrScaled);   Serial.print("\t");
+  
   Serial.print("left:");         Serial.print(left);         Serial.print("\t");
   Serial.print("right:");        Serial.print(right);
   Serial.println();
