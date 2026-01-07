@@ -22,6 +22,11 @@
 #define LEADER_MODE 1
 #endif
 
+// センサーLED表示を有効化する場合は 1 に設定する。
+#ifndef SENSOR_LED_ENABLED
+#define SENSOR_LED_ENABLED 0
+#endif
+
 // ------------------ チューニング用パラメータ ------------------
 int   THRESHOLD      = 500;   // 白40 / 黒1000想定の中間。環境で調整
 int   HYST           = 40;    // ヒステリシス
@@ -36,26 +41,26 @@ int   BASE_BACK_MIN  = 100;   // 後退時の最低PWM
 float BASE_SPEED_ALPHA_ACCEL = 0.15f; // 直線復帰時の加速レスポンス
 float BASE_SPEED_ALPHA_DECEL = 1.0f;  // カーブ時の減速レスポンス
 #if LEADER_MODE
-float KP_FWD         = 0.35f;  // 先導機: 前進Pゲイン（控えめ）
+float KP_FWD         = 0.365f;  // 先導機: 前進Pゲイン（控えめ）
 #else
 float KP_FWD         = 0.35f;  // 通常: 前進Pゲイン
 #endif
 float KP_BACK        = 0.3f;  // 後退Pゲイン
-float KI_FWD         = 0.0f;  // 前進Iゲイン
+float KI_FWD         = 0.005f;  // 前進Iゲイン
 float KI_BACK        = 0.005f;  // 後退Iゲイン
 float KD_FWD         = 0.038f;  // 前進Dゲイン
 float KD_BACK        = 0.04f;  // 後退Dゲイン
 float CURVE_E_GAIN   = 0.0f;   // 誤差に対する減速係数
 float CURVE_E_EXP    = 1.5f;   // 誤差に対する減速の非線形指数（1で線形）
 float CURVE_D_GAIN   = 0.0f;   // 変化量に対する減速係数
-float CORR_EXP       = 1.1f;   // 補正量の非線形指数（1で線形）
-int   CORR_MAX       = 414;    // 補正量の最大PWM値（MAX_PWMとは独立して調整可能）
+float CORR_EXP       = 1.5f;   // 補正量の非線形指数（1で線形）
+int   CORR_MAX       = 565;    // 補正量の最大PWM値（MAX_PWMとは独立して調整可能）
 float PID_I_LIMIT    = 1.0f;  // I項アンチワインドアップ上限
 float LINE_WHITE     = 100.0f;   // センサ白レベル
 float LINE_BLACK     = 800.0f;  // センサ黒レベル
 float LINE_EPS       = 1e-3f;   // 全白判定のしきい値
 int   MAX_PWM        = 255;   // PWM上限
-int   MIN_PWM        = -1;     // PWM下限
+int   MIN_PWM        = 0;     // PWM下限
 int   SEEK_SPEED     = 120;   // ライン探索速度（端点から黒を掴むまで）
 unsigned long SEEK_LINE_BACK_MIN_DURATION_MS = 500; // SEEK_LINE_BACKの最低継続時間
 unsigned long LOST_MS_RECIP      = 100; // Reciprocalモードの見失い判定時間

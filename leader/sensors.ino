@@ -142,6 +142,7 @@ Sense readSensors() {
   s.lastBlackStateFront = lastFrontDirState;
   s.lastBlackDirStateRear = lastRearDirState;
 
+#if SENSOR_LED_ENABLED
   if (s.mode == SensorMode::Front5) {
     bool f1 = (s.frontCount > 0) ? s.isBlackFront[0] : false;
     bool f2 = (s.frontCount > 1) ? s.isBlackFront[1] : false;
@@ -157,6 +158,7 @@ Sense readSensors() {
     bool rearR = (s.rearCount > 1) ? s.isBlackRear[1] : false;
     displaySensorStates(frontL, frontC, frontR, rearL, rearR);
   }
+#endif
 
   return s;
 }

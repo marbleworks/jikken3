@@ -25,7 +25,7 @@ const uint8_t DEAD_PWM = 30;
 
 const size_t MOVING_AVG_SIZE = 1;
 
-const unsigned long SONAR_INTERVAL_MS = 70;
+const unsigned long SONAR_INTERVAL_MS = 80;
 const unsigned long LCD_UPDATE_MS     = 200;  // LCD更新間隔（ドット応答速度に合わせる）
 const unsigned long RECOVER_TIMEOUT_MS = 0; // リカバリモードに移行するまでの時間
 const int RECOVER_TURN_PWM = 160;             // リカバリ時の旋回PWM差分
