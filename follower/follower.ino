@@ -27,7 +27,7 @@ const size_t MOVING_AVG_SIZE = 1;
 
 const unsigned long SONAR_INTERVAL_MS = 80;
 const unsigned long LCD_UPDATE_MS     = 200;  // LCD更新間隔（ドット応答速度に合わせる）
-const unsigned long RECOVER_TIMEOUT_MS = 0; // リカバリモードに移行するまでの時間
+const unsigned long RECOVER_TIMEOUT_MS = 500; // リカバリモードに移行するまでの時間
 const int RECOVER_TURN_PWM = 160;             // リカバリ時の旋回PWM差分
 
 // ------------------ PID制御パラメータ ------------------
@@ -219,18 +219,13 @@ void loop()
       turnStartTime = now;
     }
 
-    // 経過時間に応じて旋回量を増加（TURN_PWM → RECOVER_TURN_PWM）
+    // 経過時間に応じて旋回PWMを切り替え
     unsigned long elapsed = now - turnStartTime;
     if (elapsed >= RECOVER_TIMEOUT_MS)
     {
       currentTurnPwm = RECOVER_TURN_PWM;
     }
-    else
-    {
-      // 線形補間: TURN_PWM から RECOVER_TURN_PWM へ徐々に増加
-      float ratio = (float)elapsed / RECOVER_TIMEOUT_MS;
-      currentTurnPwm = TURN_PWM + (int)((RECOVER_TURN_PWM - TURN_PWM) * ratio);
-    }
+    // else: currentTurnPwm = TURN_PWM (初期値のまま)
 
     // 両方見失った場合は右旋回
     if (bothLost)
