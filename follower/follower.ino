@@ -25,13 +25,13 @@ const uint8_t DEAD_PWM = 30;
 
 const size_t MOVING_AVG_SIZE = 1;
 
-const unsigned long SONAR_INTERVAL_MS = 80;
+const unsigned long SONAR_INTERVAL_MS = 90;
 const unsigned long LCD_UPDATE_MS     = 200;  // LCD更新間隔（ドット応答速度に合わせる）
-const unsigned long RECOVER_TIMEOUT_MS = 500; // リカバリモードに移行するまでの時間
+const unsigned long RECOVER_TIMEOUT_MS = 1000; // リカバリモードに移行するまでの時間
 const int RECOVER_TURN_PWM = 160;             // リカバリ時の旋回PWM差分
 
 // ------------------ PID制御パラメータ ------------------
-float KP = 0.5f;             // 比例ゲイン（距離差 → 補正量）
+float KP = 0.4f;             // 比例ゲイン（距離差 → 補正量）
 float KI = 0.0f;             // 積分ゲイン
 float KD = 0.03f;            // 微分ゲイン
 float PID_I_LIMIT = 50.0f;   // 積分項の上限

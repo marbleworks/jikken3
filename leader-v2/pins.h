@@ -2,7 +2,7 @@
 #include <Arduino.h>
 
 // ===== センサ配線（前方5センサ）=====
-inline constexpr uint8_t SENSOR_PINS[5] = {A1, A2, A3, A4, A5};
+inline constexpr uint8_t SENSOR_PINS[5] = {A0, A1, A2, A3, A4};
 
 // ===== モータ配線 =====
 // モータA（左）

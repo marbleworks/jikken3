@@ -2,13 +2,13 @@
 #include <Arduino.h>
 
 // ===== センサ配線 =====
-inline constexpr uint8_t FRONT5_SENSOR_PINS[5] = {A4, A1, A2, A3, A5};
+inline constexpr uint8_t FRONT5_SENSOR_PINS[5] = {A1, A2, A3, A4, A5};
 inline constexpr uint8_t FRONT3_SENSOR_PINS[3] = {A1, A2, A3};
 inline constexpr uint8_t REAR2_SENSOR_PINS[2] = {A4, A5};
 
 // ===== 実行モード選択用可変抵抗 =====
 inline constexpr int RUNMODE_POT_PIN = A0;
-inline constexpr bool RUNMODE_POT_ENABLED = true;
+inline constexpr bool RUNMODE_POT_ENABLED = false;
 
 inline constexpr uint8_t LED_WARN  = 2; 
 

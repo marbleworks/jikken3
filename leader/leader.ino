@@ -9,12 +9,12 @@
 
 // センサーデバッグ出力を有効化する場合は 1 に設定する。
 #ifndef SENSOR_DEBUG_PRINT
-#define SENSOR_DEBUG_PRINT 0
+#define SENSOR_DEBUG_PRINT 1
 #endif
 
 // PID制御デバッグ出力を有効化する場合は 1 に設定する。
 #ifndef PID_DEBUG_PRINT
-#define PID_DEBUG_PRINT 1
+#define PID_DEBUG_PRINT 0
 #endif
 
 // 先導機モードを有効化する場合は 1 に設定する。

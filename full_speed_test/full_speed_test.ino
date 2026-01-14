@@ -27,7 +27,7 @@ void setup() {
   switch (MODE) {
     case 1:  leftPWM = 255; rightPWM = 128; break;  // 右旋回
     case 2:  leftPWM = 128; rightPWM = 255; break;  // 左旋回
-    default: leftPWM = 255; rightPWM = 255; break;  // 直進
+    default: leftPWM = 100; rightPWM = 100; break;  // 直進
   }
 
   analogWrite(A_PWM, leftPWM);   // 左=A

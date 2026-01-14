@@ -6,7 +6,7 @@ enum RunMode {
   RUNMODE_LOOP
 };
 
-inline constexpr RunMode COMPILE_TIME_RUNMODE = RUNMODE_RECIP; // 直線コース向け既定値
+inline constexpr RunMode COMPILE_TIME_RUNMODE = RUNMODE_LOOP; // 直線コース向け既定値
 
 extern RunMode runMode;
 
