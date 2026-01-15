@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 
-inline constexpr size_t SENSOR_COUNT = 5;
+inline constexpr size_t SENSOR_COUNT = 6;
 
 struct Sense {
   int raw[SENSOR_COUNT];

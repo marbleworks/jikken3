@@ -1,8 +1,11 @@
 #pragma once
 #include <Arduino.h>
 
-// ===== センサ配線（前方5センサ）=====
-inline constexpr uint8_t SENSOR_PINS[5] = {A0, A1, A2, A3, A4};
+// ===== センサ配線（6センサ・弓形配置）=====
+// 配置:     S2  S3      (中央・前)
+//         S1      S4    (中間)
+//       S0          S5  (外側・後)
+inline constexpr uint8_t SENSOR_PINS[6] = {A0, A1, A2, A3, A4, A5};
 
 // ===== モータ配線 =====
 // モータA（左）

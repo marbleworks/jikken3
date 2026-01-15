@@ -101,18 +101,12 @@ void loop() {
     error = computeError(s);
     correction = computePidCorrection(pid, error);
 
-    // error正 = 機体が右 → 左旋回 → 左を下げる
-    // error負 = 機体が左 → 右旋回 → 右を下げる
-    int corr = (int)fabsf(correction);
-    if (correction > 0) {
-      // 左旋回: 左を下げる
-      leftSpeed = BASE_SPEED - corr;
-      rightSpeed = BASE_SPEED;
-    } else {
-      // 右旋回: 右を下げる
-      leftSpeed = BASE_SPEED;
-      rightSpeed = BASE_SPEED - corr;
-    }
+    // 両輪差動: 内輪を下げ、外輪を上げる
+    // error正 = 機体が右 → 左旋回 → 左下げ・右上げ
+    // error負 = 機体が左 → 右旋回 → 左上げ・右下げ
+    int corr = (int)correction;
+    leftSpeed = BASE_SPEED - corr;
+    rightSpeed = BASE_SPEED + corr;
   }
 
   // PWM上限を決定

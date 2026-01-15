@@ -18,11 +18,15 @@ int computeBlackDirState(const Sense& s) {
   bool right = false;
   bool center = false;
 
-  // 5センサー: 0=左端, 1=左, 2=中央, 3=右, 4=右端
+  // 6センサー弓形配置:
+  //     S2  S3    (中央・前)
+  //   S1      S4  (中間)
+  // S0          S5 (外側・後)
+  // S0,S1 = 左, S2,S3 = 中央, S4,S5 = 右
   for (size_t i = 0; i < SENSOR_COUNT; ++i) {
     if (!s.isBlack[i]) continue;
     if (i <= 1)      left = true;
-    else if (i >= 3) right = true;
+    else if (i >= 4) right = true;
     else             center = true;
   }
 
@@ -76,8 +80,8 @@ float computeError(const Sense& s) {
   };
 
   // 機体が右にずれている → error正
-  // 5センサー: 左端→右端の順で重み付け
-  static const float weights[SENSOR_COUNT] = {1.0f, 0.5f, 0.0f, -0.5f, -1.0f};
+  // 6センサー弓形配置: S0(左外)→S5(右外)の順で重み付け
+  static const float weights[SENSOR_COUNT] = {1.0f, 0.6f, 0.2f, -0.2f, -0.6f, -1.0f};
   float sum = 0.0f;
   float weighted = 0.0f;
 
